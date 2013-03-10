@@ -208,6 +208,33 @@ static void ts_error_log(char *tag, int val, int buff_size, struct a2dp_config c
        ERROR("[%s] ts %08lld, diff %08lld, val %d %d", tag, now_us, diff_us, val, buff_size);
     }
 }
+#ifdef A2DP_HW_SYSFS_TUNER
+/* If kernel supports some kind of A2DP related tuning,
+   this function should be used to switch tuning on/off.
+   Specify in BLUEDROID BUILDCFG the following values:
+   A2DP_HW_SYSFS_TUNER "/sysfs/path/to/tuner/or/scaling_min_freq"
+   A2DP_HW_SYSFS_TUNER_OFF "0"   # value to switch tuning off,
+                                 # "0" or a Min Freq off value
+                                 # like "0"
+   A2DP_HW_SYSFS_TUNER_ON "1"    # value to switch tuning on
+                                 # "1", or Min Freq boost value
+                                 # like "205000"
+*/
+static void a2dp_hw_sysfs_tuning(int state)
+{
+    int fd = open( A2DP_HW_SYSFS_TUNER, O_WRONLY);
+    if(fd > 0) {
+        char *val = A2DP_HW_SYSFS_TUNER_OFF;
+        if (state)
+        {
+            val = A2DP_HW_SYSFS_TUNER_ON;
+        }
+        write(fd, val, strlen(val));
+        INFO("a2dp tuning set to %s", val);
+        close(fd);
+    }
+}
+#endif
 
 /* logs timestamp with microsec precision
    pprev is optional in case a dedicated diff is required */
@@ -563,6 +590,9 @@ static int start_audio_datapath(struct a2dp_stream_common *common)
         common->state = AUDIO_A2DP_STATE_STARTED;
     }
 
+#ifdef A2DP_HW_SYSFS_TUNER
+    a2dp_hw_sysfs_tuning(1);
+#endif
     return 0;
 }
 
@@ -574,6 +604,11 @@ static int stop_audio_datapath(struct a2dp_stream_common *common)
     INFO("state %s", dump_a2dp_hal_state(common->state));
 
     if (common->ctrl_fd == AUDIO_SKT_DISCONNECTED)
+#ifdef A2DP_HW_SYSFS_TUNER
+    /* disable a2dp tuning  ASAP */
+    a2dp_hw_sysfs_tuning(0);
+#endif
+
          return -1;
 
     /* prevent any stray output writes from autostarting the stream
@@ -601,6 +636,11 @@ static int suspend_audio_datapath(struct a2dp_stream_common *common, bool standb
     INFO("state %s", dump_a2dp_hal_state(common->state));
 
     if (common->ctrl_fd == AUDIO_SKT_DISCONNECTED)
+#ifdef A2DP_HW_SYSFS_TUNER
+    /* disable a2dp tuning ASAP */
+    a2dp_hw_sysfs_tuning(0);
+#endif
+
          return -1;
 
     if (common->state == AUDIO_A2DP_STATE_STOPPING)

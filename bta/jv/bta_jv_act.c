@@ -398,8 +398,8 @@ static tBTA_JV_STATUS bta_jv_free_rfc_cb(tBTA_JV_RFC_CB *p_cb, tBTA_JV_PCB *p_pc
         return status;
     case BTA_JV_ST_CL_OPEN:
     case BTA_JV_ST_CL_OPENING:
-        APPL_TRACE_DEBUG("bta_jv_free_sr_rfc_cb: state: %d, scn:%d,"
-                          " user_data:%p", p_pcb->state, p_cb->scn, p_pcb->user_data);
+        APPL_TRACE_DEBUG3("bta_jv_free_sr_rfc_cb: state: %d, scn:%d,"
+                          " user_data:%d", p_pcb->state, p_cb->scn, (int)p_pcb->user_data);
         p_pcb->state = BTA_JV_ST_CL_CLOSING;
         break;
     case BTA_JV_ST_SR_LISTEN:

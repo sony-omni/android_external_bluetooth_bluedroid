@@ -47,13 +47,11 @@ static btgatt_multi_adv_common_data *p_multi_adv_com_data_cb = NULL;
 
 btgatt_multi_adv_common_data *btif_obtain_multi_adv_data_cb()
 {
-    if(0 == BTM_BleMaxMultiAdvInstanceCount())
-    {
-        BTIF_TRACE_WARNING("%s - No instances found", __FUNCTION__);
-        return NULL;
-    }
+    int max_adv_inst = BTM_BleMaxMultiAdvInstanceCount();
+    if (0 == max_adv_inst)
+        max_adv_inst = 1;
 
-    BTIF_TRACE_DEBUG("%s, Count:%d", __FUNCTION__, BTM_BleMaxMultiAdvInstanceCount());
+    BTIF_TRACE_DEBUG("%s, Count:%d", __FUNCTION__, max_adv_inst);
     if (NULL == p_multi_adv_com_data_cb)
     {
         BTIF_TRACE_DEBUG("Initializing in %s", __FUNCTION__);
@@ -63,26 +61,17 @@ btgatt_multi_adv_common_data *btif_obtain_multi_adv_data_cb()
             memset(p_multi_adv_com_data_cb, 0, sizeof(btgatt_multi_adv_common_data));
 
             /* Storing both client_if and inst_id details */
-            if (NULL == (p_multi_adv_com_data_cb->clntif_map =
-                  GKI_getbuf(( BTM_BleMaxMultiAdvInstanceCount() * INST_ID_IDX_MAX)* sizeof(INT8)))) {
-                GKI_freebuf(p_multi_adv_com_data_cb);
-                BTIF_TRACE_ERROR("%s: Line No:%d, Failed to get memory.", __FUNCTION__, __LINE__);
-                return NULL;
-            }
+            p_multi_adv_com_data_cb->clntif_map =
+                  GKI_getbuf(( max_adv_inst * INST_ID_IDX_MAX)* sizeof(INT8));
             memset(p_multi_adv_com_data_cb->clntif_map, 0 ,
-                  ( BTM_BleMaxMultiAdvInstanceCount() * INST_ID_IDX_MAX)* sizeof(INT8));
+                  ( max_adv_inst * INST_ID_IDX_MAX)* sizeof(INT8));
 
-            if (NULL == (p_multi_adv_com_data_cb->inst_cb = GKI_getbuf(( BTM_BleMaxMultiAdvInstanceCount() + 1 )
-                                              * sizeof(btgatt_multi_adv_inst_cb)))) {
-                GKI_freebuf(p_multi_adv_com_data_cb);
-                GKI_freebuf(p_multi_adv_com_data_cb->clntif_map);
-                BTIF_TRACE_ERROR("%s: Line No:%d, Failed to get memory.", __FUNCTION__, __LINE__);
-                return NULL;
-            }
+            p_multi_adv_com_data_cb->inst_cb = GKI_getbuf(( max_adv_inst + 1 )
+                                              * sizeof(btgatt_multi_adv_inst_cb));
             memset(p_multi_adv_com_data_cb->inst_cb, 0 ,
-                 ( BTM_BleMaxMultiAdvInstanceCount() + 1) * sizeof(btgatt_multi_adv_inst_cb));
+                 ( max_adv_inst + 1) * sizeof(btgatt_multi_adv_inst_cb));
 
-            for (int i=0; i < BTM_BleMaxMultiAdvInstanceCount()*2; i += 2)
+            for (int i=0; i < max_adv_inst * 2; i += 2)
             {
                 p_multi_adv_com_data_cb->clntif_map[i] = INVALID_ADV_INST;
                 p_multi_adv_com_data_cb->clntif_map[i+1] = INVALID_ADV_INST;

@@ -70,6 +70,8 @@
 
 #define SAFE_FD_ISSET(fd, set) (((fd) == -1) ? FALSE : FD_ISSET((fd), (set)))
 
+#define UIPC_FLUSH_BUFFER_SIZE 1024
+
 /*****************************************************************************
 **  Local type definitions
 ******************************************************************************/
@@ -374,49 +376,41 @@ static int uipc_setup_server_locked(tUIPC_CH_ID ch_id, char *name, tUIPC_RCV_CBA
 
 static void uipc_flush_ch_locked(tUIPC_CH_ID ch_id)
 {
-    char *buf;
+    char buf[UIPC_FLUSH_BUFFER_SIZE];
     struct pollfd pfd;
     int ret;
     int size = 0;
 
-    pfd.events = POLLIN|POLLHUP;
+    pfd.events = POLLIN;
     pfd.fd = uipc_main.ch[ch_id].fd;
 
     if (uipc_main.ch[ch_id].fd == UIPC_DISCONNECTED)
+    {
+        BTIF_TRACE_EVENT("%s() - fd disconnected. Exiting", __FUNCTION__);
         return;
+    }
 
     while (1)
     {
         ret = poll(&pfd, 1, 1);
-        BTIF_TRACE_EVENT("uipc_flush_ch_locked polling : fd %d, rxev %x, ret %d", pfd.fd, pfd.revents, ret);
+        BTIF_TRACE_VERBOSE("%s() - polling fd %d, revents: 0x%x, ret %d",
+                __FUNCTION__, pfd.fd, pfd.revents, ret);
 
-        if (pfd.revents & (POLLERR|POLLHUP)) {
-            BTIF_TRACE_EVENT("returning because of remote hangup/error");
+        if (pfd.revents & (POLLERR|POLLHUP))
+        {
+            BTIF_TRACE_EVENT("%s() - POLLERR or POLLHUP. Exiting", __FUNCTION__);
             return;
         }
 
         if (ret <= 0)
         {
-            BTIF_TRACE_EVENT("uipc_flush_ch_locked : error (%d)", ret);
+            BTIF_TRACE_EVENT("%s() - error (%d). Exiting", __FUNCTION__, ret);
             return;
         }
 
-        ret = ioctl(uipc_main.ch[ch_id].fd, FIONREAD, &size);
-        if (ret <0) {
-            BTIF_TRACE_EVENT("uipc_flush_ch_locked: FIONREAD error: %d", ret);
-            return;
-        }
-
-        BTIF_TRACE_EVENT("uipc_flush_ch_locked: FIONREAD : %d", size);
-        buf = (char*)malloc(size);
-        if (buf == NULL) {
-            BTIF_TRACE_EVENT("uipc_flush_ch_locked: buf alloc issue %d", ret);
-            return;
-        }
-        ret = read(pfd.fd, buf, size);
-        BTIF_TRACE_EVENT("Flushed %d bytes", ret);
-        free(buf);
-        buf = NULL;
+        /* read sufficiently large buffer to ensure flush empties socket faster than
+           it is getting refilled */
+        read(pfd.fd, &buf, UIPC_FLUSH_BUFFER_SIZE);
     }
 }
 

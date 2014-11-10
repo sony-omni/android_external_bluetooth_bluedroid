@@ -990,11 +990,15 @@ static void btif_dm_pin_req_evt(tBTA_DM_PIN_REQ *p_pin_req)
     bt_bdname_t bd_name;
     UINT32 cod;
     bt_pin_code_t pin_code;
-    BOOLEAN secure;
+    int dev_type;
 
     /* Remote properties update */
+    if (!btif_get_device_type(p_pin_req->bd_addr, &dev_type))
+    {
+        dev_type = BT_DEVICE_TYPE_BREDR;
+    }
     btif_update_remote_properties(p_pin_req->bd_addr, p_pin_req->bd_name,
-                                  p_pin_req->dev_class, BT_DEVICE_TYPE_BREDR);
+                                  p_pin_req->dev_class, (tBT_DEVICE_TYPE) dev_type);
 
     bdcpy(bd_addr.address, p_pin_req->bd_addr);
     memcpy(bd_name.name, p_pin_req->bd_name, BD_NAME_LEN);
@@ -1093,12 +1097,17 @@ static void btif_dm_ssp_cfm_req_evt(tBTA_DM_SP_CFM_REQ *p_ssp_cfm_req)
     bt_bdname_t bd_name;
     UINT32 cod;
     BOOLEAN is_incoming = !(pairing_cb.state == BT_BOND_STATE_BONDING);
+    int dev_type;
 
     BTIF_TRACE_DEBUG("%s", __FUNCTION__);
 
     /* Remote properties update */
+    if (!btif_get_device_type(p_ssp_cfm_req->bd_addr, &dev_type))
+    {
+        dev_type = BT_DEVICE_TYPE_BREDR;
+    }
     btif_update_remote_properties(p_ssp_cfm_req->bd_addr, p_ssp_cfm_req->bd_name,
-                                  p_ssp_cfm_req->dev_class, BT_DEVICE_TYPE_BREDR);
+                                  p_ssp_cfm_req->dev_class, (tBT_DEVICE_TYPE) dev_type);
 
     bdcpy(bd_addr.address, p_ssp_cfm_req->bd_addr);
     memcpy(bd_name.name, p_ssp_cfm_req->bd_name, BD_NAME_LEN);
@@ -1156,12 +1165,17 @@ static void btif_dm_ssp_key_notif_evt(tBTA_DM_SP_KEY_NOTIF *p_ssp_key_notif)
     bt_bdaddr_t bd_addr;
     bt_bdname_t bd_name;
     UINT32 cod;
+    int dev_type;
 
     BTIF_TRACE_DEBUG("%s", __FUNCTION__);
 
     /* Remote properties update */
+    if (!btif_get_device_type(p_ssp_key_notif->bd_addr, &dev_type))
+    {
+        dev_type = BT_DEVICE_TYPE_BREDR;
+    }
     btif_update_remote_properties(p_ssp_key_notif->bd_addr, p_ssp_key_notif->bd_name,
-                                  p_ssp_key_notif->dev_class, BT_DEVICE_TYPE_BREDR);
+                                  p_ssp_key_notif->dev_class, (tBT_DEVICE_TYPE) dev_type);
 
     bdcpy(bd_addr.address, p_ssp_key_notif->bd_addr);
     memcpy(bd_name.name, p_ssp_key_notif->bd_name, BD_NAME_LEN);
@@ -3217,12 +3231,17 @@ static void btif_dm_ble_key_notif_evt(tBTA_DM_SP_KEY_NOTIF *p_ssp_key_notif)
     bt_bdaddr_t bd_addr;
     bt_bdname_t bd_name;
     UINT32 cod;
+    int dev_type;
 
     BTIF_TRACE_DEBUG("%s", __FUNCTION__);
 
     /* Remote name update */
-    btif_update_remote_properties(p_ssp_key_notif->bd_addr , p_ssp_key_notif->bd_name,
-                                          NULL, BT_DEVICE_TYPE_BLE);
+    if (!btif_get_device_type(p_ssp_key_notif->bd_addr, &dev_type))
+    {
+        dev_type = BT_DEVICE_TYPE_BLE;
+    }
+    btif_dm_update_ble_remote_properties(p_ssp_key_notif->bd_addr , p_ssp_key_notif->bd_name,
+                                         (tBT_DEVICE_TYPE) dev_type);
     bdcpy(bd_addr.address, p_ssp_key_notif->bd_addr);
     memcpy(bd_name.name, p_ssp_key_notif->bd_name, BD_NAME_LEN);
 
@@ -3424,6 +3443,8 @@ void btif_dm_ble_sec_req_evt(tBTA_DM_BLE_SEC_REQ *p_ble_req)
     bt_bdaddr_t bd_addr;
     bt_bdname_t bd_name;
     UINT32 cod;
+    int dev_type;
+
     BTIF_TRACE_DEBUG("%s", __FUNCTION__);
 
     if (pairing_cb.state == BT_BOND_STATE_BONDING)
@@ -3433,7 +3454,12 @@ void btif_dm_ble_sec_req_evt(tBTA_DM_BLE_SEC_REQ *p_ble_req)
     }
 
     /* Remote name update */
-    btif_update_remote_properties(p_ble_req->bd_addr,p_ble_req->bd_name,NULL,BT_DEVICE_TYPE_BLE);
+    if (!btif_get_device_type(p_ble_req->bd_addr, &dev_type))
+    {
+        dev_type = BT_DEVICE_TYPE_BLE;
+    }
+    btif_dm_update_ble_remote_properties(p_ble_req->bd_addr, p_ble_req->bd_name,
+                                         (tBT_DEVICE_TYPE) dev_type);
 
     bdcpy(bd_addr.address, p_ble_req->bd_addr);
     memcpy(bd_name.name, p_ble_req->bd_name, BD_NAME_LEN);
@@ -3466,9 +3492,15 @@ static void btif_dm_ble_passkey_req_evt(tBTA_DM_PIN_REQ *p_pin_req)
     bt_bdaddr_t bd_addr;
     bt_bdname_t bd_name;
     UINT32 cod;
+    int dev_type;
 
     /* Remote name update */
-    btif_update_remote_properties(p_pin_req->bd_addr,p_pin_req->bd_name,NULL,BT_DEVICE_TYPE_BLE);
+    if (!btif_get_device_type(p_pin_req->bd_addr, &dev_type))
+    {
+        dev_type = BT_DEVICE_TYPE_BLE;
+    }
+    btif_dm_update_ble_remote_properties(p_pin_req->bd_addr,p_pin_req->bd_name,
+                                         (tBT_DEVICE_TYPE) dev_type);
 
     bdcpy(bd_addr.address, p_pin_req->bd_addr);
     memcpy(bd_name.name, p_pin_req->bd_name, BD_NAME_LEN);

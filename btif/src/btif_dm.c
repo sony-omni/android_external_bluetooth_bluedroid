@@ -109,12 +109,6 @@ BOOLEAN blacklistPairingRetries(BD_ADDR bd_addr)
 #define BTIF_DM_INTERLEAVE_DURATION_LE_TWO    4
 #endif
 
-#define MAX_SDP_BL_ENTRIES 3
-
-#define BOND_TYPE_UNKNOWN     0
-#define BOND_TYPE_PERSISTENT  1
-#define BOND_TYPE_TEMPORARY   2
-
 #define BOND_TYPE_UNKNOWN     0
 #define BOND_TYPE_PERSISTENT  1
 #define BOND_TYPE_TEMPORARY   2

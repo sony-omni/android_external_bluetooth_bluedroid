@@ -115,6 +115,10 @@ BOOLEAN blacklistPairingRetries(BD_ADDR bd_addr)
 #define BOND_TYPE_PERSISTENT  1
 #define BOND_TYPE_TEMPORARY   2
 
+#define BOND_TYPE_UNKNOWN     0
+#define BOND_TYPE_PERSISTENT  1
+#define BOND_TYPE_TEMPORARY   2
+
 typedef struct
 {
     bt_bond_state_t state;
@@ -1223,7 +1227,7 @@ static void btif_dm_auth_cmpl_evt (tBTA_DM_AUTH_CMPL *p_auth_cmpl)
             (p_auth_cmpl->key_type == HCI_LKEY_TYPE_CHANGED_COMB) || pairing_cb.bond_type == BOND_TYPE_PERSISTENT)
         {
             bt_status_t ret;
-            BTIF_TRACE_DEBUG("%s: Storing link key. key_type=0x%x, bond_type=%d",
+            BTIF_TRACE_DEBUG3("%s: Storing link key. key_type=0x%x, bond_type=%d",
                 __FUNCTION__, p_auth_cmpl->key_type, pairing_cb.bond_type);
             ret = btif_storage_add_bonded_device(&bd_addr,
                                 p_auth_cmpl->key, p_auth_cmpl->key_type,
@@ -1232,15 +1236,12 @@ static void btif_dm_auth_cmpl_evt (tBTA_DM_AUTH_CMPL *p_auth_cmpl)
         }
         else
         {
-            BTIF_TRACE_DEBUG("%s: Temporary key. Not storing. key_type=0x%x, bond_type=%d",
+            BTIF_TRACE_DEBUG3("%s: Temporary key. Not storing. key_type=0x%x, bond_type=%d",
                 __FUNCTION__, p_auth_cmpl->key_type, pairing_cb.bond_type);
             if(pairing_cb.bond_type == BOND_TYPE_TEMPORARY)
             {
-                BTIF_TRACE_DEBUG("%s: sending BT_BOND_STATE_NONE for Temp pairing",
+                BTIF_TRACE_DEBUG1("%s: sending BT_BOND_STATE_NONE for Temp pairing",
                         __FUNCTION__);
-                if (btif_storage_is_device_bonded(&bd_addr) == TRUE) {
-                    btif_storage_remove_bonded_device(&bd_addr);
-                }
                 bond_state_changed(BT_STATUS_SUCCESS, &bd_addr, BT_BOND_STATE_NONE);
                 return;
             }

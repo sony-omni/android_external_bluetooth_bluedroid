@@ -47,6 +47,7 @@
 #define AVCT_REV_1_0                0x0100
 #define AVCT_REV_1_2                0x0102
 #define AVCT_REV_1_3                0x0103
+#define AVCT_REV_1_4                0x0104
 
 /* the layer_specific settings */
 #define AVCT_DATA_CTRL              0x0001    /* for the control channel */
@@ -269,6 +270,22 @@ AVCT_API extern UINT16 AVCT_GetPeerMtu (UINT8 handle);
 **
 *******************************************************************************/
 AVCT_API extern UINT16 AVCT_MsgReq(UINT8 handle, UINT8 label, UINT8 cr, BT_HDR *p_msg);
+
+
+/*******************************************************************************
+**
+** Function         avct_get_peer_addr_by_ccb
+**
+**
+** Description      Return peer BD address on ccb index (or handle).
+**
+**
+**
+**
+** Returns          BD Address.
+**
+*******************************************************************************/
+AVCT_API extern BOOLEAN avct_get_peer_addr_by_ccb (UINT8 idx, BD_ADDR addr);
 
 #ifdef __cplusplus
 }

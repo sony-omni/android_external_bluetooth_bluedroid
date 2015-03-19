@@ -606,7 +606,7 @@ UINT32 GKI_get_remaining_ticks (TIMER_LIST_Q *p_timer_listq, TIMER_LIST_ENT  *p_
         }
 
         /* if found target entry */
-        if (p_tle == p_target_tle)
+        if (p_tle && p_tle == p_target_tle)
         {
             rem_ticks += p_tle->ticks;
         }
@@ -637,6 +637,17 @@ UINT32 GKI_get_remaining_ticks (TIMER_LIST_Q *p_timer_listq, TIMER_LIST_ENT  *p_
 *******************************************************************************/
 void GKI_add_to_timer_list (TIMER_LIST_Q *p_timer_listq, TIMER_LIST_ENT  *p_tle)
 {
+
+    /* block others to edit the timer_queue list while it is getting modified */
+    GKI_disable();
+
+    if (p_timer_listq == NULL || p_tle == NULL)
+    {
+       BT_ERROR_TRACE(TRACE_LAYER_GKI, "ERROR :GKI_add_to_timer_list:either node or List is NULL");
+       GKI_enable();
+       return;
+    }
+
     /* Only process valid tick values. */
     if (p_tle->ticks < 0)
         return;
@@ -650,6 +661,7 @@ void GKI_add_to_timer_list (TIMER_LIST_Q *p_timer_listq, TIMER_LIST_ENT  *p_tle)
     {
         p_timer_listq->p_first = p_tle;
         p_timer_listq->p_last = p_tle;
+        GKI_enable();
         return;
     }
 
@@ -661,13 +673,13 @@ void GKI_add_to_timer_list (TIMER_LIST_Q *p_timer_listq, TIMER_LIST_ENT  *p_tle)
             p_tle->ticks -= i->ticks;
         i = i->p_next;
     }
-
     /* Insert at tail. */
     if (!i)
     {
         p_timer_listq->p_last->p_next = p_tle;
         p_tle->p_prev = p_timer_listq->p_last;
         p_timer_listq->p_last = p_tle;
+        GKI_enable();
         return;
     }
 
@@ -680,6 +692,7 @@ void GKI_add_to_timer_list (TIMER_LIST_Q *p_timer_listq, TIMER_LIST_ENT  *p_tle)
 
     if (p_timer_listq->p_first == i)
         p_timer_listq->p_first = p_tle;
+    GKI_enable();
 }
 
 
@@ -702,7 +715,12 @@ BOOLEAN GKI_remove_from_timer_list (TIMER_LIST_Q *p_timer_listq, TIMER_LIST_ENT 
 
     /* Verify that the entry is valid */
     if (p_tle == NULL || p_timer_listq->p_first == NULL)
+    {
         return FALSE;
+    }
+
+    /* block others to edit the timer_queue list while it is getting modified */
+    GKI_disable();
 
     /* Add the ticks remaining in this timer (if any) to the next guy in the list.
     ** Note: Expired timers have a tick value of '0'.
@@ -741,16 +759,26 @@ BOOLEAN GKI_remove_from_timer_list (TIMER_LIST_Q *p_timer_listq, TIMER_LIST_ENT 
             if (p_tle->p_next != NULL && p_tle->p_next->p_prev == p_tle)
                 p_tle->p_next->p_prev = p_tle->p_prev;
             else
-                return FALSE; // Timer list broken?!
+            {
+                /* Error case - chain messed up ?? */
+                GKI_enable();
+                return FALSE;
+            }
 
             if (p_tle->p_prev != NULL && p_tle->p_prev->p_next == p_tle)
                 p_tle->p_prev->p_next = p_tle->p_next;
             else
-                return FALSE; // Timer list broken?!
+            {
+                /* Error case - chain messed up ?? */
+                GKI_enable();
+                return FALSE;
+            }
         }
     }
 
     p_tle->p_next = p_tle->p_prev = NULL;
+
+    GKI_enable();
     return TRUE;
 }
 

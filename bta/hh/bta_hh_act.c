@@ -34,6 +34,7 @@
 #include "bta_hh_int.h"
 #include "bta_hh_co.h"
 #include "utl.h"
+#include "btm_ble_api.h"
 
 /*****************************************************************************
 **  Constants
@@ -104,8 +105,12 @@ void bta_hh_api_enable(tBTA_HH_DATA *p_data)
     }
     else
 #endif
+
+    if (bta_hh_cb.p_cback)
+    {
         /* signal BTA call back event */
         (* bta_hh_cb.p_cback)(BTA_HH_ENABLE_EVT, (tBTA_HH *)&status);
+    }
 }
 /*******************************************************************************
 **
@@ -486,6 +491,8 @@ void bta_hh_sdp_cmpl(tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data)
             APPL_TRACE_DEBUG ("bta_hh_sdp_cmpl:SDP failed for  incoming conn :hndl %d",
                                 p_cb->incoming_hid_handle);
             HID_HostRemoveDev( p_cb->incoming_hid_handle);
+            p_cb->incoming_conn = FALSE;
+            p_cb->incoming_hid_handle = BTA_HH_INVALID_HANDLE;
         }
         conn_dat.status = status;
         (* bta_hh_cb.p_cback)(BTA_HH_OPEN_EVT, (tBTA_HH *)&conn_dat);
@@ -556,6 +563,10 @@ void bta_hh_open_cmpl_act(tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data)
     UINT8   dev_handle = p_data ? (UINT8)p_data->hid_cback.hdr.layer_specific : \
                         p_cb->hid_handle;
 
+#if BTA_HH_DEBUG
+        APPL_TRACE_EVENT ("bta_hh_open_cmpl_act:  Device[%d] connected", dev_handle);
+#endif
+
     memset((void *)&conn, 0, sizeof (tBTA_HH_CONN));
     conn.handle = dev_handle;
     bdcpy(conn.bda, p_cb->addr);
@@ -571,6 +582,8 @@ void bta_hh_open_cmpl_act(tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data)
     conn.status = p_cb->status;
     conn.le_hid = p_cb->is_le_device;
     conn.scps_supported = p_cb->scps_supported;
+    if(p_cb->scps_supported)
+        BTA_HhUpdateLeScanParam(dev_handle,BTM_BLE_SCAN_SLOW_INT_1,BTM_BLE_SCAN_SLOW_WIN_1);
 
     if (!p_cb->is_le_device)
 #endif
@@ -828,14 +841,25 @@ void bta_hh_open_failure(tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data)
     UINT32                  reason = p_data->hid_cback.data;    /* Reason for closing (32-bit) */
 
     memset(&conn_dat, 0, sizeof(tBTA_HH_CONN));
-     conn_dat.handle = p_cb->hid_handle;
-     conn_dat.status = (reason == HID_ERR_AUTH_FAILED) ?
+    conn_dat.handle = p_cb->hid_handle;
+    conn_dat.status = (reason == HID_ERR_AUTH_FAILED) ?
                                     BTA_HH_ERR_AUTH_FAILED : BTA_HH_ERR;
-     bdcpy(conn_dat.bda, p_cb->addr);
-     HID_HostCloseDev(p_cb->hid_handle);
+    bdcpy(conn_dat.bda, p_cb->addr);
+    HID_HostCloseDev(p_cb->hid_handle);
 
-     /* Report OPEN fail event */
-     (*bta_hh_cb.p_cback)(BTA_HH_OPEN_EVT, (tBTA_HH *)&conn_dat);
+#if BTA_HH_DEBUG
+    APPL_TRACE_DEBUG("bta_hh_open_failure: hid_handle = %d", p_cb->hid_handle);
+#endif
+
+    /* Report OPEN fail event */
+    (*bta_hh_cb.p_cback)(BTA_HH_OPEN_EVT, (tBTA_HH *)&conn_dat);
+
+    /* if virtually unplug, remove device */
+    if (p_cb->vp )
+    {
+        HID_HostRemoveDev( p_cb->hid_handle);
+        bta_hh_clean_up_kdev(p_cb);
+    }
 
 #if BTA_HH_DEBUG
     bta_hh_trace_dev_db();
@@ -871,6 +895,10 @@ void bta_hh_close_act (tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data)
     /* if HID_HDEV_EVT_VC_UNPLUG was received, report BTA_HH_VC_UNPLUG_EVT */
     UINT16     event = p_cb->vp ? BTA_HH_VC_UNPLUG_EVT : BTA_HH_CLOSE_EVT;
 
+#if BTA_HH_DEBUG
+    APPL_TRACE_DEBUG("bta_hh_close_act: reason = %d", reason);
+#endif
+
     disc_dat.handle = p_cb->hid_handle;
     disc_dat.status = p_data->hid_cback.data;
 
@@ -883,6 +911,8 @@ void bta_hh_close_act (tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data)
         conn_dat.handle = p_cb->hid_handle;
         conn_dat.status = (reason == HID_ERR_AUTH_FAILED) ? BTA_HH_ERR_AUTH_FAILED : BTA_HH_ERR;
         bdcpy(conn_dat.bda, p_cb->addr);
+        /* finalize device driver */
+        bta_hh_co_close(p_cb->hid_handle, p_cb->app_id);
         HID_HostCloseDev(p_cb->hid_handle);
 
         /* Report OPEN fail event */
@@ -896,7 +926,7 @@ void bta_hh_close_act (tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data)
     /* otherwise report CLOSE/VC_UNPLUG event */
     else
     {
-        /* finaliza device driver */
+        /* finalize device driver */
         bta_hh_co_close(p_cb->hid_handle, p_cb->app_id);
         /* inform role manager */
         bta_sys_conn_close( BTA_ID_HH ,p_cb->app_id, p_cb->addr);
@@ -980,6 +1010,7 @@ void bta_hh_maint_dev_act(tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data)
     {
     case BTA_HH_ADD_DEV_EVT:    /* add a device */
         bdcpy(dev_info.bda, p_dev_info->bda);
+        dev_info.priority = p_dev_info->priority;
         /* initialize callback data */
         if (p_cb->hid_handle == BTA_HH_INVALID_HANDLE)
         {
@@ -1224,6 +1255,20 @@ static void bta_hh_cback (UINT8 dev_handle, BD_ADDR addr, UINT8 event,
             {
                bta_hh_cb.kdev[xx].vp = TRUE;
                break;
+            }
+        }
+        if (xx == BTA_HH_MAX_DEVICE)
+        {
+            for (xx = 0; xx < BTA_HH_MAX_DEVICE; xx++)
+            {
+                /* No device matched entry for VC, check if VC receivied in waitng for conn state */
+                APPL_TRACE_DEBUG("bta_hh_cb.kdev[xx].state = %d", bta_hh_cb.kdev[xx].state);
+                if (bta_hh_cb.kdev[xx].state == BTA_HH_W4_CONN_ST)
+                {
+                   bta_hh_cb.kdev[xx].hid_handle = dev_handle;
+                   bta_hh_cb.kdev[xx].vp = TRUE;
+                   break;
+                }
             }
         }
         break;

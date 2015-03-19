@@ -150,6 +150,7 @@ typedef struct
     UINT16              sub_event;
     UINT8               sub_class;
     UINT8               app_id;
+    INT16               priority;
     tBTA_HH_DEV_DSCP_INFO      dscp_info;
 }tBTA_HH_MAINT_DEV;
 
@@ -225,7 +226,7 @@ typedef struct
 }tBTA_HH_LE_HID_SRVC;
 
 #ifndef BTA_HH_LE_HID_SRVC_MAX
-#define BTA_HH_LE_HID_SRVC_MAX      1
+#define BTA_HH_LE_HID_SRVC_MAX      2
 #endif
 
 /* convert a HID handle to the LE CB index */
@@ -234,7 +235,7 @@ typedef struct
 #define BTA_HH_GET_LE_DEV_HDL(x)        (UINT8)(((x)  + 1) << 4)
 /* check to see if th edevice handle is a LE device handle */
 #define BTA_HH_IS_LE_DEV_HDL(x)        ((x) & 0xf0)
-#define BTA_HH_IS_LE_DEV_HDL_VALID(x)  (((x)>>4) < BTA_HH_LE_MAX_KNOWN)
+#define BTA_HH_IS_LE_DEV_HDL_VALID(x)  (((x)>>4) <= BTA_HH_LE_MAX_KNOWN)
 #endif
 
 /* device control block */

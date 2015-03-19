@@ -167,6 +167,21 @@ typedef enum {
  *      specific epilog process once it has been done.
  */
     BT_VND_OP_EPILOG,
+
+    BT_VND_OP_ANT_USERIAL_OPEN,
+
+    BT_VND_OP_ANT_USERIAL_CLOSE,
+
+/*  [operation]
+ *      Get UART speed.
+ *  [input param]
+ *      None.
+ *  [return]
+ *      -1: Fail or Uart line speed like ..., 115200, ..., 3000000, .....
+ *  [callback]
+ *      None.
+ */
+    BT_VND_OP_GET_LINESPEED,
 } bt_vendor_opcode_t;
 
 /** Power on/off control states */
@@ -343,6 +358,11 @@ typedef struct {
 
     /** Closes the interface */
     void  (*cleanup)(void);
+
+    /** SSR cleanup is used in HW reset cases
+     * which would cloese all the client channels
+     * and turns off the chip*/
+    void  (*ssr_cleanup)(void);
 } bt_vendor_interface_t;
 
 

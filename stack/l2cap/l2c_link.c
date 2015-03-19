@@ -47,6 +47,40 @@ static BOOLEAN l2c_link_send_to_lower (tL2C_LCB *p_lcb, BT_HDR *p_buf);
 #define L2C_LINK_SEND_BLE_ACL_DATA(x)  HCI_BLE_ACL_DATA_TO_LOWER((x))
 #endif
 
+/* Black listed car kits/headsets for role switch */
+static const UINT8 hci_role_switch_black_list_prefix[][3] = {{0x00, 0x26, 0xb4}, /* NAC FORD,2013 Lincoln */
+                                                             {0x00, 0x26, 0xe8}, /* Nissan Murano */
+                                                             {0x00, 0x37, 0x6d}, /* Lexus ES300h */
+                                                             {0x9c, 0x3a, 0xaf}  /* SAMSUNG HM1900 */
+                                                            };
+
+/*******************************************************************************
+**
+** Function         hci_blacklistted_for_role_switch
+**
+** Description      This function is called to find the blacklisted carkits
+**                  for role switch.
+**
+** Returns          TRUE, if black listed
+**
+*******************************************************************************/
+BOOLEAN hci_blacklistted_for_role_switch (BD_ADDR addr)
+{
+    int blacklistsize = 0;
+    int i =0;
+
+    blacklistsize = sizeof(hci_role_switch_black_list_prefix)/sizeof(hci_role_switch_black_list_prefix[0]);
+    for (i=0; i < blacklistsize; i++)
+    {
+        if (0 == memcmp(hci_role_switch_black_list_prefix[i], addr, 3))
+        {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+#define HI_PRI_LINK_QUOTA 2 //Mininum ACL buffer quota for high priority link
 /*******************************************************************************
 **
 ** Function         l2c_link_hci_conn_req
@@ -102,6 +136,11 @@ BOOLEAN l2c_link_hci_conn_req (BD_ADDR bd_addr)
                 p_lcb->link_role = l2cu_get_conn_role(p_lcb);
         }
 
+        if ((p_lcb->link_role == BTM_ROLE_MASTER)&&(hci_blacklistted_for_role_switch(bd_addr))) {
+            p_lcb->link_role = BTM_ROLE_SLAVE;
+            L2CAP_TRACE_WARNING ("l2c_link_hci_conn_req:set link_role= %d",p_lcb->link_role);
+        }
+
         /* Tell the other side we accept the connection */
         btsnd_hcic_accept_conn (bd_addr, p_lcb->link_role);
 
@@ -122,6 +161,7 @@ BOOLEAN l2c_link_hci_conn_req (BD_ADDR bd_addr)
         else
             p_lcb->link_role = l2cu_get_conn_role(p_lcb);
 
+        p_lcb->is_collision = TRUE;
         btsnd_hcic_accept_conn (bd_addr, p_lcb->link_role);
 
         p_lcb->link_state = LST_CONNECTING;
@@ -219,7 +259,7 @@ BOOLEAN l2c_link_hci_conn_comp (UINT8 status, UINT16 handle, BD_ADDR p_bda)
         l2c_process_held_packets(FALSE);
 
         btu_stop_timer (&p_lcb->timer_entry);
-
+        p_lcb->is_collision = FALSE;
         /* For all channels, send the event through their FSMs */
         for (p_ccb = p_lcb->ccb_queue.p_first_ccb; p_ccb; p_ccb = p_ccb->p_next_ccb)
         {
@@ -261,6 +301,16 @@ BOOLEAN l2c_link_hci_conn_comp (UINT8 status, UINT16 handle, BD_ADDR p_bda)
 
         p_lcb->disc_reason = status;
         /* Release the LCB */
+        if(status == HCI_ERR_COMMAND_DISALLOWED && p_lcb->is_collision ==  TRUE)
+        {
+          L2CAP_TRACE_ERROR ("l2c_link_hci_conn_comp: collision,Dont free p_lcb");
+          p_lcb->is_collision = FALSE;
+          p_lcb->link_state = LST_CONNECTING;
+          return (TRUE);
+        }
+
+        p_lcb->is_collision = FALSE;
+
         if (p_lcb->ccb_queue.p_first_ccb == NULL)
             l2cu_release_lcb (p_lcb);
         else                              /* there are any CCBs remaining */
@@ -733,6 +783,14 @@ void l2c_link_adjust_allocation (void)
     while ( (num_hipri_links * high_pri_link_quota + low_quota) > controller_xmit_quota )
         high_pri_link_quota--;
 
+    /*Adjust high pri link with min 3 buffers*/
+    if (num_hipri_links > 0)
+    {
+        if (high_pri_link_quota < HI_PRI_LINK_QUOTA)
+        {
+            high_pri_link_quota  = HI_PRI_LINK_QUOTA;
+        }
+    }
     /* Work out the xmit quota and buffer quota high and low priorities */
     hi_quota  = num_hipri_links * high_pri_link_quota;
     low_quota = (hi_quota < controller_xmit_quota) ? controller_xmit_quota - hi_quota : 1;

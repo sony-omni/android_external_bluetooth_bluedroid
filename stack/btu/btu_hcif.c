@@ -40,6 +40,7 @@
 extern void btm_process_cancel_complete(UINT8 status, UINT8 mode);
 extern void btm_ble_test_command_complete(UINT8 *p);
 
+#include "bt_target.h"
 // btla-specific ++
 #define LOG_TAG "BTLD"
 #if (defined(ANDROID_APP_INCLUDED) && (ANDROID_APP_INCLUDED == TRUE) && (!defined(LINUX_NATIVE)) )
@@ -1105,6 +1106,32 @@ static void btu_hcif_hdl_command_complete (UINT16 opcode, UINT8 *p, UINT16 evt_l
             btm_write_le_host_supported_complete (p);
             break;
 
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+        case HCI_WRITE_SECURE_CONN_HOST_SUPPORT:
+            btm_write_secure_conn_host_support_complete (p);
+            break;
+
+        case HCI_READ_SECURE_CONN_HOST_SUPPORT:
+            break;
+
+        case HCI_WRITE_SEC_CONN_TEST_MODE:
+            break;
+
+        case HCI_WRITE_AUTH_PAYLOAD_TOUT:
+            break;
+
+        case HCI_READ_AUTH_PAYLOAD_TOUT:
+            break;
+
+        case HCI_READ_LOCAL_OOB_EXTENDED_DATA:
+#if BTM_OOB_INCLUDED == TRUE
+            btm_read_local_oob_extended_complete(p);
+            break;
+#endif
+        case HCI_REM_OOB_EXTENDED_DATA_REQ_REPLY:
+            break;
+#endif
+
 #if (BLE_INCLUDED == TRUE)
 /* BLE Commands sComplete*/
         case HCI_BLE_READ_WHITE_LIST_SIZE :
@@ -1212,7 +1239,15 @@ static void btu_hcif_command_complete_evt (UINT8 controller_id, UINT8 *p, UINT16
             p_dequeued = (UINT8 *)(p_cmd + 1) + p_cmd->offset;
             STREAM_TO_UINT16 (opcode_dequeued, p_dequeued);
 
-            if (opcode_dequeued != cc_opcode)
+            /* extract the callback for vendor specific commands for which
+               controller has responded with 0xffff*/
+            if ( (opcode_dequeued != cc_opcode)
+#if (defined(BTM_READ_CTLR_CAP_INCLUDED) && BTM_READ_CTLR_CAP_INCLUDED == TRUE)
+                && !((opcode_dequeued == HCI_BLE_VENDOR_CAP_OCF) &&
+                   ((opcode_dequeued & HCI_GRP_VENDOR_SPECIFIC) == HCI_GRP_VENDOR_SPECIFIC) &&
+                   ((cc_opcode & HCI_GRP_VENDOR_SPECIFIC) == HCI_GRP_VENDOR_SPECIFIC))
+#endif
+            )
             {
                 /* opcode does not match, check next command in the queue */
                 p_cmd = (BT_HDR *) GKI_getnext(p_cmd);
@@ -1671,7 +1706,8 @@ void btu_hcif_cmd_timeout (UINT8 controller_id)
     {
         HCI_TRACE_ERROR("Num consecutive HCI Cmd tout =%d Restarting BT process",num_hci_cmds_timed_out);
 
-        usleep(10000); /* 10 milliseconds */
+        bte_ssr_cleanup();
+        usleep(20000); /* 20 milliseconds */
         /* Killing the process to force a restart as part of fault tolerance */
         kill(getpid(), SIGKILL);
     }
@@ -1705,6 +1741,14 @@ static void btu_hcif_hardware_error_evt (UINT8 *p)
     /* Reset the controller */
     if (BTM_IsDeviceUp())
         BTM_DeviceReset (NULL);
+    if(*p == 0x0f)
+     {
+       HCI_TRACE_ERROR("Ctlr H/w error event - code:Tigger SSR");
+       bte_ssr_cleanup();
+       usleep(20000); /* 20 milliseconds */
+        /* Killing the process to force a restart as part of fault tolerance */
+       kill(getpid(), SIGKILL);
+     }
 }
 
 

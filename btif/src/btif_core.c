@@ -52,6 +52,8 @@
 #include "btif_mce.h"
 #include "btif_profile_queue.h"
 #include "btif_config.h"
+#include "btif_sock_util.h"
+#include "btif_gatt_multi_adv_util.h"
 /************************************************************************************
 **  Constants & Macros
 ************************************************************************************/
@@ -69,6 +71,9 @@
 /************************************************************************************
 **  Local type definitions
 ************************************************************************************/
+
+static BOOLEAN bt_disabled = FALSE;
+pthread_mutex_t mutex_bt_disable;
 
 /* These type definitions are used when passing data from the HAL to BTIF context
 *  in the downstream path for the adapter and remote_device property APIs */
@@ -90,10 +95,13 @@ typedef union {
 
 typedef enum {
     BTIF_CORE_STATE_DISABLED = 0,
+    BTIF_CORE_STATE_INITIALIZED,
     BTIF_CORE_STATE_ENABLING,
     BTIF_CORE_STATE_ENABLED,
     BTIF_CORE_STATE_DISABLING
 } btif_core_state_t;
+
+extern void btif_gattc_destroy_multi_adv_cb(int client_if);
 
 /************************************************************************************
 **  Static variables
@@ -108,6 +116,8 @@ static btif_core_state_t btif_core_state = BTIF_CORE_STATE_DISABLED;
 
 static int btif_shutdown_pending = 0;
 static tBTA_SERVICE_MASK btif_enabled_services = 0;
+static int btif_data_profile_registered = 0;
+static int btif_pending_mode = BT_SCAN_MODE_NONE;
 
 /*
 * This variable should be set to 1, if the Bluedroid+BTIF libraries are to
@@ -307,14 +317,23 @@ static void btif_task(UINT32 params)
          */
         if (event == BT_EVT_HARDWARE_INIT_FAIL)
         {
-            BTIF_TRACE_DEBUG("btif_task: hardware init failed");
-            bte_main_disable();
-            btif_queue_release();
-            GKI_task_self_cleanup(BTIF_TASK);
-            bte_main_shutdown();
-            btif_dut_mode = 0;
-            btif_core_state = BTIF_CORE_STATE_DISABLED;
-            HAL_CBACK(bt_hal_cbacks,adapter_state_changed_cb,BT_STATE_OFF);
+            lock_slot(&mutex_bt_disable);
+            BTIF_TRACE_DEBUG("btif_task: mutex_bt_disable lock");
+            if(bt_disabled == FALSE)
+            {
+                BTIF_TRACE_DEBUG("btif_task: hardware init failed");
+                bte_main_disable();
+                btif_queue_release();
+                GKI_task_self_cleanup(BTIF_TASK);
+                bte_main_shutdown();
+                btif_dut_mode = 0;
+                btif_core_state = BTIF_CORE_STATE_DISABLED;
+                /*variable to avoid the double cleanup*/
+                bt_disabled = TRUE;
+                HAL_CBACK(bt_hal_cbacks,adapter_state_changed_cb,BT_STATE_OFF);
+            }
+            BTIF_TRACE_DEBUG("btif_task: mutex_bt_disable unlock");
+            unlock_slot(&mutex_bt_disable);
             break;
         }
 
@@ -491,7 +510,7 @@ bt_status_t btif_init_bluetooth()
 
     if (status != GKI_SUCCESS)
         return BT_STATUS_FAIL;
-
+    btif_core_state = BTIF_CORE_STATE_INITIALIZED;
     return BT_STATUS_SUCCESS;
 }
 
@@ -529,7 +548,8 @@ bt_status_t btif_enable_bluetooth(void)
 {
     BTIF_TRACE_DEBUG("BTIF ENABLE BLUETOOTH");
 
-    if (btif_core_state != BTIF_CORE_STATE_DISABLED)
+    if (btif_core_state != BTIF_CORE_STATE_DISABLED &&
+        btif_core_state != BTIF_CORE_STATE_INITIALIZED)
     {
         ALOGD("not disabled\n");
         return BT_STATUS_DONE;
@@ -537,6 +557,9 @@ bt_status_t btif_enable_bluetooth(void)
 
     btif_core_state = BTIF_CORE_STATE_ENABLING;
 
+    bt_disabled = FALSE;
+
+    init_slot_lock(&mutex_bt_disable);
     /* Create the GKI tasks and run them */
     bte_main_enable();
 
@@ -609,8 +632,8 @@ void btif_enable_bluetooth_evt(tBTA_STATUS status, BD_ADDR local_bd)
     /* callback to HAL */
     if (status == BTA_SUCCESS)
     {
-        /* initialize a2dp service */
-        btif_av_init();
+        /* don't initialize a2dp service */
+        //btif_av_init(); // we need av_init only from init_sink, init_src
 
         /* init rfcomm & l2cap api */
         btif_sock_init();
@@ -677,6 +700,9 @@ bt_status_t btif_disable_bluetooth(void)
     status = BTA_DisableBluetooth();
 
     btif_config_flush();
+
+    /* clear the adv instances on bt turn off */
+    btif_gattc_destroy_multi_adv_cb(INVALID_CLIENT_IF);
 
     if (status != BTA_SUCCESS)
     {
@@ -765,21 +791,39 @@ bt_status_t btif_shutdown_bluetooth(void)
 
     btif_shutdown_pending = 0;
 
-    if (btif_core_state == BTIF_CORE_STATE_ENABLING)
+    lock_slot(&mutex_bt_disable);
+    if(bt_disabled == FALSE)
     {
-        // Java layer abort BT ENABLING, could be due to ENABLE TIMEOUT
-        // Direct call from cleanup()@bluetooth.c
-        // bring down HCI/Vendor lib
-        bte_main_disable();
-        btif_core_state = BTIF_CORE_STATE_DISABLED;
-        HAL_CBACK(bt_hal_cbacks, adapter_state_changed_cb, BT_STATE_OFF);
+        /*variable to avoid the double cleanup*/
+        bt_disabled = TRUE;
+        if (btif_core_state == BTIF_CORE_STATE_ENABLING)
+        {
+            // Java layer abort BT ENABLING, could be due to ENABLE TIMEOUT
+            // Direct call from cleanup()@bluetooth.c
+            // bring down HCI/Vendor lib
+            bte_main_disable();
+            btif_core_state = BTIF_CORE_STATE_DISABLED;
+            HAL_CBACK(bt_hal_cbacks, adapter_state_changed_cb, BT_STATE_OFF);
+        }
+
+        GKI_destroy_task(BTIF_TASK);
+        btif_queue_release();
+        bte_main_shutdown();
+
+        btif_dut_mode = 0;
     }
-
-    GKI_destroy_task(BTIF_TASK);
-    btif_queue_release();
-    bte_main_shutdown();
-
-    btif_dut_mode = 0;
+    else if (btif_core_state == BTIF_CORE_STATE_INITIALIZED)
+    {
+       // Java Layer called cleanup before calling enable due to START TIMEOUT
+       // Cleanup GKI task to reset the hal callback handle
+       BTIF_TRACE_WARNING("shutdown...cleanup called before enable");
+       GKI_destroy_task(BTIF_TASK);
+       btif_queue_release();
+       bte_main_shutdown();
+       btif_core_state = BTIF_CORE_STATE_DISABLED;
+       btif_dut_mode = 0;
+    }
+    unlock_slot(&mutex_bt_disable);
 
     bt_utils_cleanup();
 
@@ -788,6 +832,15 @@ bt_status_t btif_shutdown_bluetooth(void)
     return BT_STATUS_SUCCESS;
 }
 
+/*******************************************************************************
+Function       btif_ssrcleanup
+Description   Trigger SSR when Disable timeout occured
+
+*******************************************************************************/
+void btif_ssr_cleanup(void)
+{
+  bte_ssr_cleanup();
+}
 
 /*******************************************************************************
 **
@@ -948,7 +1001,7 @@ static bt_status_t btif_in_get_remote_device_properties(bt_bdaddr_t *bd_addr)
     uint32_t num_props = 0;
 
     bt_bdname_t name, alias;
-    uint32_t cod, devtype;
+    uint32_t cod, devtype, trustval;
     bt_uuid_t remote_uuids[BT_MAX_NUM_UUIDS];
 
     memset(remote_properties, 0, sizeof(remote_properties));
@@ -960,6 +1013,12 @@ static bt_status_t btif_in_get_remote_device_properties(bt_bdaddr_t *bd_addr)
 
     BTIF_STORAGE_FILL_PROPERTY(&remote_properties[num_props], BT_PROPERTY_REMOTE_FRIENDLY_NAME,
                                sizeof(alias), &alias);
+    btif_storage_get_remote_device_property(bd_addr,
+                                            &remote_properties[num_props]);
+    num_props++;
+
+    BTIF_STORAGE_FILL_PROPERTY(&remote_properties[num_props], BT_PROPERTY_REMOTE_TRUST_VALUE,
+                               sizeof(trustval), &trustval);
     btif_storage_get_remote_device_property(bd_addr,
                                             &remote_properties[num_props]);
     num_props++;
@@ -1283,6 +1342,14 @@ bt_status_t btif_set_adapter_property(const bt_property_t *property)
 
                 BTIF_TRACE_EVENT("set property scan mode : %x", mode);
 
+                if (!btif_data_profile_registered && mode != BT_SCAN_MODE_NONE)
+                {
+                    btif_pending_mode = mode;
+                    BTIF_TRACE_DEBUG("btif_set_adapter_property: not setting connectable mode, "
+                        "as data profiles are not yet registered. Mode will be set when "
+                        "data profile(s) are registered");
+                    return BT_STATUS_SUCCESS;
+                }
                 BTA_DmSetVisibility(disc_mode, conn_mode, BTA_DM_IGNORE, BTA_DM_IGNORE);
 
                 storage_req_id = BTIF_CORE_STORAGE_ADAPTER_WRITE;
@@ -1524,4 +1591,56 @@ bt_status_t btif_config_hci_snoop_log(uint8_t enable)
     bte_main_config_hci_logging(enable != 0,
              btif_core_state == BTIF_CORE_STATE_DISABLED);
     return BT_STATUS_SUCCESS;
+}
+
+/*******************************************************************************
+**
+** Function         btif_data_profile_register
+**
+** Description      Sets BT_PROPERTY_ADAPTER_SCAN_MODE property when data
+**                  start registering.
+**
+** Returns          bt_status_t
+**
+*******************************************************************************/
+void btif_data_profile_register(int value)
+{
+    bt_property_t property;
+    int val;
+
+    //update the global in any case
+    btif_data_profile_registered = value;
+
+    if (btif_pending_mode == BT_SCAN_MODE_NONE)
+    {
+        BTIF_TRACE_EVENT("%s: pending mode is BT_SCAN_MODE_NONE.. returning", __FUNCTION__);
+        return;
+    }
+
+    BTIF_TRACE_EVENT("%s: Data profile registration = %d", __FUNCTION__, value);
+    if (btif_data_profile_registered)
+    {
+        property.type = BT_PROPERTY_ADAPTER_SCAN_MODE;
+        val = btif_pending_mode;
+        property.val = &val;;
+        property.len = (sizeof(int));
+        /* Reset pending mode to None */
+        btif_pending_mode = BT_SCAN_MODE_NONE;
+        btif_set_adapter_property(&property);
+    }
+}
+
+/*******************************************************************************
+**
+** Function         btif_is_shutdown
+**
+** Description      Check btif_core_state before freeing gki buffer, do not
+**                  call gki free if the gki is already shutdown.
+**
+** Returns          btif_core_state boolean
+**
+*******************************************************************************/
+BOOLEAN btif_is_shutdown(void)
+{
+   return (btif_core_state == BTIF_CORE_STATE_DISABLED);
 }

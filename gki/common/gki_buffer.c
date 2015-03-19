@@ -82,7 +82,8 @@ static void gki_init_free_queue (UINT8 id, UINT16 size, UINT16 total, void *p_me
             hdr          = (BUFFER_HDR_T *)((UINT8 *)hdr + act_size);
             hdr1->p_next = hdr;
         }
-        hdr1->p_next = NULL;
+        if (hdr1)
+            hdr1->p_next = NULL;
         p_cb->freeq[id].p_last = hdr1;
     }
 // btla-specific --
@@ -378,6 +379,9 @@ void *GKI_getbuf (UINT16 size)
         return (NULL);
     }
 
+    /* Make sure the buffers aren't disturbed til finished with allocation */
+    GKI_disable();
+
     /* Find the first buffer pool that is public that can hold the desired size */
     for (i=0; i < p_cb->curr_total_no_of_pools; i++)
     {
@@ -388,11 +392,13 @@ void *GKI_getbuf (UINT16 size)
     if(i == p_cb->curr_total_no_of_pools)
     {
         GKI_exception (GKI_ERROR_BUF_SIZE_TOOBIG, "getbuf: Size is too big");
-        return (NULL);
+        goto error;
     }
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+    if(i == GKI_POOL_ID_10)
+        goto error;
+#endif
 
-    /* Make sure the buffers aren't disturbed til finished with allocation */
-    GKI_disable();
 
     /* search the public buffer pools that are big enough to hold the size
      * until a free buffer is found */
@@ -401,17 +407,15 @@ void *GKI_getbuf (UINT16 size)
         /* Only look at PUBLIC buffer pools (bypass RESTRICTED pools) */
         if (((UINT16)1 << p_cb->pool_list[i]) & p_cb->pool_access_mask)
             continue;
-        if ( size <= p_cb->freeq[p_cb->pool_list[i]].size )
-             Q = &p_cb->freeq[p_cb->pool_list[i]];
-        else
-             continue;
+
+        Q = &p_cb->freeq[p_cb->pool_list[i]];
 
         if(Q->cur_cnt < Q->total)
         {
 // btla-specific ++
         #ifdef GKI_USE_DEFERED_ALLOC_BUF_POOLS
             if(Q->p_first == 0 && gki_alloc_free_queue(i) != TRUE)
-                return NULL;
+                goto error;
         #endif
 // btla-specific --
             p_hdr = Q->p_first;
@@ -434,10 +438,10 @@ void *GKI_getbuf (UINT16 size)
             return ((void *) ((UINT8 *)p_hdr + BUFFER_HDR_SIZE));
         }
     }
-
-    GKI_enable();
-
     GKI_exception (GKI_ERROR_OUT_OF_BUFFERS, "getbuf: out of buffers");
+
+error:
+    GKI_enable();
     return (NULL);
 }
 
@@ -475,6 +479,36 @@ void *GKI_getpoolbuf (UINT8 pool_id)
     Q = &p_cb->freeq[pool_id];
     if(Q->cur_cnt < Q->total)
     {
+
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+#if (defined(OBX_OVER_L2C_DYNAMIC_POOL_ENABLED) && OBX_OVER_L2C_DYNAMIC_POOL_ENABLED == TRUE)
+        UINT32          *magic;
+        if(pool_id == GKI_POOL_ID_10)
+        {
+            void* p_mem = GKI_os_malloc((Q->size + BUFFER_PADDING_SIZE));
+
+            if(p_mem)
+            {
+                p_hdr = (BUFFER_HDR_T *)p_mem;
+                p_hdr->task_id = GKI_INVALID_TASK;
+                p_hdr->q_id    = pool_id;
+                p_hdr->status  = BUF_STATUS_UNLINKED;
+                magic        = (UINT32 *)((UINT8 *)p_hdr + BUFFER_HDR_SIZE + Q->size);
+                *magic       = MAGIC_NO;
+                p_hdr->p_next = NULL;
+                p_hdr->Type    = 0;
+
+                if(++Q->cur_cnt > Q->max_cnt)
+                    Q->max_cnt = Q->cur_cnt;
+
+                GKI_enable();
+
+                return ((void *) ((UINT8 *)p_hdr + BUFFER_HDR_SIZE));
+            }
+        }
+#endif
+#endif
+
 // btla-specific ++
 #ifdef GKI_USE_DEFERED_ALLOC_BUF_POOLS
         if(Q->p_first == 0 && gki_alloc_free_queue(pool_id) != TRUE)
@@ -549,6 +583,23 @@ void GKI_freebuf (void *p_buf)
     }
 
     GKI_disable();
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+#if (defined(OBX_OVER_L2C_DYNAMIC_POOL_ENABLED) && OBX_OVER_L2C_DYNAMIC_POOL_ENABLED == TRUE)
+    if(p_hdr->q_id == GKI_POOL_ID_10)
+    {
+        Q  = &gki_cb.com.freeq[p_hdr->q_id];
+
+        GKI_os_free(p_hdr);
+
+        if (Q->cur_cnt > 0)
+            Q->cur_cnt--;
+
+        GKI_enable();
+
+        return;
+    }
+#endif
+#endif
 
     /*
     ** Release the buffer

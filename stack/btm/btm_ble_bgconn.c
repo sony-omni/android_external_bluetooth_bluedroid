@@ -83,11 +83,14 @@ BOOLEAN btm_add_dev_to_controller (BOOLEAN to_add, BD_ADDR bd_addr)
         {
             if (p_dev_rec->ble.ble_addr_type == BLE_ADDR_PUBLIC || !BTM_BLE_IS_RESOLVE_BDA(bd_addr))
             {
+                started = btsnd_hcic_ble_add_white_list (p_dev_rec->ble.ble_addr_type, bd_addr);
+            }
+            else
+            {
 #if (defined BLE_PRIVACY_SPT && BLE_PRIVACY_SPT == TRUE)
                 /* add device into IRK list */
                 btm_ble_vendor_irk_list_load_dev(p_dev_rec);
 #endif
-                started = btsnd_hcic_ble_add_white_list (p_dev_rec->ble.ble_addr_type, bd_addr);
             }
             if (memcmp(p_dev_rec->ble.static_addr, bd_addr, BD_ADDR_LEN) != 0 &&
                 memcmp(p_dev_rec->ble.static_addr, dummy_bda, BD_ADDR_LEN) != 0)
@@ -189,7 +192,7 @@ BOOLEAN btm_update_dev_to_white_list(BOOLEAN to_add, BD_ADDR bd_addr)
 {
     /* look up the sec device record, and find the address */
     tBTM_BLE_CB *p_cb = &btm_cb.ble_ctr_cb;
-    UINT8       wl_state = p_cb->wl_state;
+    UINT8       wl_state = BTM_BLE_WL_INIT;
 
     if ((to_add && p_cb->num_empty_filter == 0) ||
         (!to_add && p_cb->num_empty_filter == p_cb->max_filter_entries))
@@ -295,6 +298,34 @@ UINT8 btm_ble_count_unconn_dev_in_whitelist(void)
     return count;
 
 }
+
+#if BLE_PRIVACY_SPT == TRUE
+/*******************************************************************************
+**
+** Function         btm_ble_count_unconn_dev_in_wl_irk
+**
+** Description      This function find the number of un-connected background device
+*******************************************************************************/
+UINT8 btm_ble_count_unconn_dev_in_wl_irk(void)
+{
+    tBTM_BLE_CB *p_cb = &btm_cb.ble_ctr_cb;
+    UINT8 i, count = 0;
+
+    for (i = 0; i < BTM_BLE_MAX_BG_CONN_DEV_NUM; i ++)
+    {
+        if (p_cb->bg_dev_list[i].in_use &&
+            !BTM_IsAclConnectionUp(p_cb->bg_dev_list[i].bd_addr, BT_TRANSPORT_LE))
+        {
+            if(btm_ble_vendor_find_irk_entry_by_psuedo_addr(p_cb->bg_dev_list[i].bd_addr))
+            {
+                count ++;
+            }
+        }
+    }
+    return count;
+}
+#endif
+
 /*******************************************************************************
 **
 ** Function         btm_update_bg_conn_list
@@ -380,6 +411,11 @@ BOOLEAN btm_ble_start_auto_conn(BOOLEAN start)
         if ((p_cb->conn_state == BLE_CONN_IDLE && btm_ble_count_unconn_dev_in_whitelist() > 0)
             && btm_ble_topology_check(BTM_BLE_STATE_INIT))
         {
+#if (defined BLE_PRIVACY_SPT && BLE_PRIVACY_SPT == TRUE)
+            /*enable offload if any unconn dev in WL are in IRK list*/
+            if (btm_cb.cmn_ble_vsc_cb.rpa_offloading == TRUE && btm_ble_count_unconn_dev_in_wl_irk() > 0)
+                btm_ble_vendor_enable_irk_feature(TRUE);
+#endif
             scan_int = (p_cb->scan_int == BTM_BLE_CONN_PARAM_UNDEF) ? BTM_BLE_SCAN_SLOW_INT_1 : p_cb->scan_int;
             scan_win = (p_cb->scan_win == BTM_BLE_CONN_PARAM_UNDEF) ? BTM_BLE_SCAN_SLOW_WIN_1 : p_cb->scan_win;
 
@@ -419,11 +455,6 @@ BOOLEAN btm_ble_start_auto_conn(BOOLEAN start)
             btsnd_hcic_ble_create_conn_cancel();
             btm_ble_set_conn_st (BLE_CONN_CANCEL);
             p_cb->wl_state |= BTM_BLE_WL_INIT;
-
-#if (defined BLE_PRIVACY_SPT && BLE_PRIVACY_SPT == TRUE)
-            if (btm_cb.cmn_ble_vsc_cb.rpa_offloading == TRUE)
-                btm_ble_vendor_disable_irk_list();
-#endif
         }
         else
         {
@@ -687,9 +718,47 @@ void btm_ble_enqueue_direct_conn_req(void *p_param)
 {
     tBTM_BLE_CONN_REQ   *p = (tBTM_BLE_CONN_REQ *)GKI_getbuf(sizeof(tBTM_BLE_CONN_REQ));
 
-    p->p_param = p_param;
-
-    GKI_enqueue (&btm_cb.ble_ctr_cb.conn_pending_q, p);
+    if (NULL != p)
+    {
+        p->p_param = p_param;
+        GKI_enqueue (&btm_cb.ble_ctr_cb.conn_pending_q, p);
+    } else {
+        BTM_TRACE_ERROR ("%s: Failed to get memory", __FUNCTION__);
+    }
+}
+/*******************************************************************************
+**
+** Function         btm_ble_dequeue_direct_conn_req
+**
+** Description      This function dequeues the direct connection request
+**
+** Returns          None.
+**
+*******************************************************************************/
+void btm_ble_dequeue_direct_conn_req(BD_ADDR rem_bda)
+{
+    tBTM_BLE_CONN_REQ   *p_req = NULL;
+    tL2C_LCB *p_lcb;
+    if(btm_cb.ble_ctr_cb.conn_pending_q.count)
+    {
+        p_req = (tBTM_BLE_CONN_REQ*)GKI_getfirst(&btm_cb.ble_ctr_cb.conn_pending_q);
+    }
+    while(p_req != NULL)
+    {
+        p_lcb = (tL2C_LCB *)p_req->p_param;
+        if((p_lcb != NULL) && (p_lcb->in_use))
+        {
+            //If BD address matches
+            if(!memcmp (rem_bda, p_lcb->remote_bd_addr, BD_ADDR_LEN))
+            {
+                GKI_remove_from_queue(&btm_cb.ble_ctr_cb.conn_pending_q, p_req);
+                l2cu_release_lcb ((tL2C_LCB *)p_req->p_param);
+                GKI_freebuf((void *)p_req);
+                break;
+            }
+        }
+        p_req = (tBTM_BLE_CONN_REQ*)GKI_getnext(p_req);
+    }
 }
 /*******************************************************************************
 **
@@ -707,11 +776,13 @@ BOOLEAN btm_send_pending_direct_conn(void )
 
     if ( btm_cb.ble_ctr_cb.conn_pending_q.count )
     {
-        p_req = (tBTM_BLE_CONN_REQ*)GKI_dequeue (&btm_cb.ble_ctr_cb.conn_pending_q);
-
-        rt = l2cble_init_direct_conn((tL2C_LCB *)(p_req->p_param));
-
-        GKI_freebuf((void *)p_req);
+        if (NULL != (p_req = (tBTM_BLE_CONN_REQ*)GKI_dequeue (&btm_cb.ble_ctr_cb.conn_pending_q)))
+        {
+            rt = l2cble_init_direct_conn((tL2C_LCB *)(p_req->p_param));
+            GKI_freebuf((void *)p_req);
+        } else {
+            BTM_TRACE_ERROR ("%s: Failed to get pending connection", __FUNCTION__);
+        }
     }
 
     return rt;

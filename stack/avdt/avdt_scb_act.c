@@ -298,6 +298,7 @@ void avdt_scb_hdl_pkt_no_frag(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
         {
             /* report sequence number */
             p_data->p_pkt->layer_specific = seq;
+            APPL_TRACE_LATENCY_AUDIO("AVDTP Recv Packet, seq number %d", seq);
             (*p_scb->cs.p_data_cback)(avdt_scb_to_hdl(p_scb), p_data->p_pkt,
                 time_stamp, (UINT8)(m_pt | (marker<<7)));
         }
@@ -2051,15 +2052,7 @@ void avdt_scb_tc_timer(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
 void avdt_scb_clr_vars(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
 {
     UNUSED(p_data);
-
-    if ((p_scb->cs.tsep == AVDT_TSEP_SNK) && (!p_scb->sink_activated))
-    {
-        p_scb->in_use = TRUE;
-    }
-    else
-    {
-        p_scb->in_use = FALSE;
-    }
+    p_scb->in_use = FALSE;
     p_scb->p_ccb = NULL;
     p_scb->peer_seid = 0;
 }

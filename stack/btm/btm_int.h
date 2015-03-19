@@ -42,6 +42,8 @@
 #endif
 #endif
 
+tBTM_BLE_MULTI_ADV_CB  btm_multi_adv_cb;
+
 #if BTM_MAX_LOC_BD_NAME_LEN > 0
 typedef char tBTM_LOC_BD_NAME[BTM_MAX_LOC_BD_NAME_LEN + 1];
 #endif
@@ -209,6 +211,8 @@ UINT8                   le_supported_states[BTM_LE_SUPPORT_STATE_SIZE];
     UINT32                  test_local_sign_cntr;
 #endif
 
+    tBTM_RSSI_MONITOR_CMD_CPL_CB p_rssi_monitor_cmd_cpl_cb; /* for rssi monitor command complete */
+    tBTM_RSSI_MONITOR_EVENT_CB   p_rssi_monitor_event_cb; /* for rssi threshold event */
 
 #endif  /* BLE_INCLUDED */
 
@@ -226,6 +230,12 @@ UINT8                   le_supported_states[BTM_LE_SUPPORT_STATE_SIZE];
 #define BTM_HOST_MAY_SUPP_SSP           0x02
 #define BTM_HOST_MAY_SUPP_LE            0x04
 #define BTM_HOST_MAY_SUPP_SIMULT_BR_LE  0x08
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+#define BTM_HOST_MAY_SUPP_SECURE_CONN   0x10
+#if (defined(BTM_READ_CTLR_CAP_INCLUDED) && BTM_READ_CTLR_CAP_INCLUDED == TRUE)
+#define BTM_READ_CTLR_CAPABILITY        0x20
+#endif
+#endif
     UINT8               lmp_features_host_may_support;  /* The flags of LMP features host may support via BR/EDR ctrlr + BTM_RE_READ_1ST_PAGE */
     UINT8               supported_cmds[HCI_NUM_SUPP_COMMANDS_BYTES]; /* Supported Commands bit field */
 
@@ -454,6 +464,8 @@ extern void     btm_accept_sco_link(UINT16 sco_inx, tBTM_ESCO_PARAMS *p_setup,
                                     tBTM_SCO_CB *p_conn_cb, tBTM_SCO_CB *p_disc_cb);
 extern void     btm_reject_sco_link(UINT16 sco_inx );
 extern void btm_sco_chk_pend_rolechange (UINT16 hci_handle);
+extern void btm_sco_disc_chk_pend_for_modechange (UINT16 hci_handle);
+
 #else
 #define btm_accept_sco_link(sco_inx, p_setup, p_conn_cb, p_disc_cb)
 #define btm_reject_sco_link(sco_inx)
@@ -586,7 +598,7 @@ typedef struct
     BOOLEAN     link_key_not_sent;      /* link key notification has not been sent waiting for name */
     UINT8       link_key_type;          /* Type of key used in pairing   */
     BOOLEAN     link_key_changed;       /* Changed link key during current connection */
-
+    UINT8       pin_key_len;            /* PIN key length of current pairing for Legacy devices */
 #define BTM_MAX_PRE_SM4_LKEY_TYPE   BTM_LKEY_TYPE_REMOTE_UNIT /* the link key type used by legacy pairing */
 
 #define BTM_SM4_UNKNOWN     0x00
@@ -620,6 +632,9 @@ typedef struct
 #define BTM_SEC_NO_LAST_SERVICE_ID      0
     UINT8           last_author_service_id;         /* ID of last serviced authorized: Reset after each l2cap connection */
 
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+    BOOLEAN     sec_conn_supported;  /* secure connection support from Host and Controller of Remote device */
+#endif
 } tBTM_SEC_DEV_REC;
 
 #define BTM_SEC_IS_SM4(sm) ((BOOLEAN)(BTM_SM4_TRUE == ((sm)&BTM_SM4_TRUE)))
@@ -650,7 +665,8 @@ enum
     BTM_PM_ST_HOLD    = BTM_PM_STS_HOLD,
     BTM_PM_ST_SNIFF   = BTM_PM_STS_SNIFF,
     BTM_PM_ST_PARK    = BTM_PM_STS_PARK,
-    BTM_PM_ST_PENDING = BTM_PM_STS_PENDING
+    BTM_PM_ST_PENDING = BTM_PM_STS_PENDING,
+    BTM_PM_ST_INVALID = 0xFF
 };
 typedef UINT8 tBTM_PM_STATE;
 
@@ -851,6 +867,10 @@ typedef struct
     UINT16      btm_acl_pkt_types_supported;
     UINT16      btm_sco_pkt_types_supported;
 
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+    BOOLEAN     btm_sec_conn_supported;  /* secure connection support from Host and Controller */
+    BOOLEAN     btm_sec_conn_only_mode;  /* secure connection only mode enabled */
+#endif
 
     /*****************************************************
     **      Inquiry
@@ -1039,6 +1059,8 @@ extern void btm_pm_proc_cmd_status(UINT8 status);
 extern void btm_pm_proc_mode_change (UINT8 hci_status, UINT16 hci_handle, UINT8 mode,
                                      UINT16 interval);
 extern void btm_pm_proc_ssr_evt (UINT8 *p, UINT16 evt_len);
+BTM_API extern tBTM_STATUS btm_read_power_mode_state (BD_ADDR remote_bda,
+                                                      tBTM_PM_STATE *pmState);
 #if BTM_SCO_INCLUDED == TRUE
 extern void btm_sco_chk_pend_unpark (UINT8 hci_status, UINT16 hci_handle);
 #else
@@ -1085,6 +1107,10 @@ extern void btm_read_local_name_complete (UINT8 *p, UINT16 evt_len);
 extern void btm_read_local_addr_complete (UINT8 *p, UINT16 evt_len);
 extern  void btm_reset_ctrlr_complete (void);
 extern void btm_write_simple_paring_mode_complete (UINT8 *p);
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+extern void btm_write_secure_conn_host_support_complete (UINT8 *p);
+extern void btm_read_local_oob_extended_complete (UINT8 *p);
+#endif
 extern void btm_write_le_host_supported_complete (UINT8 *p);
 
 #if (BLE_INCLUDED == TRUE)
@@ -1120,6 +1146,7 @@ extern void               btm_sec_free_dev (tBTM_SEC_DEV_REC *p_dev_rec);
 extern tBTM_SEC_DEV_REC  *btm_find_dev (BD_ADDR bd_addr);
 extern tBTM_SEC_DEV_REC  *btm_find_or_alloc_dev (BD_ADDR bd_addr);
 extern tBTM_SEC_DEV_REC  *btm_find_dev_by_handle (UINT16 handle);
+extern tBTM_SEC_DEV_REC  *btm_find_dev_by_sec_state(UINT8 sec_state);
 
 /* Internal functions provided by btm_sec.c
 **********************************************
@@ -1131,6 +1158,8 @@ extern tBTM_STATUS  btm_sec_l2cap_access_req (BD_ADDR bd_addr, UINT16 psm,
 extern tBTM_STATUS  btm_sec_mx_access_request (BD_ADDR bd_addr, UINT16 psm, BOOLEAN is_originator,
                                         UINT32 mx_proto_id, UINT32 mx_chan_id,
                                         tBTM_SEC_CALLBACK *p_callback, void *p_ref_data);
+
+extern  tBTM_STATUS btm_sec_execute_procedure (tBTM_SEC_DEV_REC *p_dev_rec);
 extern void  btm_sec_conn_req (UINT8 *bda, UINT8 *dc);
 extern void btm_create_conn_cancel_complete (UINT8 *p);
 extern void btm_proc_lsto_evt(UINT16 handle, UINT16 timeout);

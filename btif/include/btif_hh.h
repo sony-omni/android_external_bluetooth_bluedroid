@@ -30,7 +30,12 @@
 **  Constants & Macros
 ********************************************************************************/
 
+#ifndef MAX_L2CAP_CHANNELS
 #define BTIF_HH_MAX_HID         8
+#else
+#define BTIF_HH_MAX_HID         MAX_L2CAP_CHANNELS
+#endif
+
 #define BTIF_HH_MAX_ADDED_DEV   32
 
 #define BTIF_HH_MAX_KEYSTATES            3
@@ -76,6 +81,7 @@ typedef struct
     UINT8             dev_handle;
     bt_bdaddr_t       bd_addr;
     tBTA_HH_ATTR_MASK attr_mask;
+    int priority;
 } btif_hh_added_device_t;
 
 /**

@@ -86,6 +86,7 @@
 #define HCI_COMMAND_STATUS_EVT      0x0F
 #define HCI_READ_BUFFER_SIZE        0x1005
 #define HCI_LE_READ_BUFFER_SIZE     0x2002
+#define L2CAP_MAX_DATA_SIZE         0x8000
 
 /******************************************************************************
 **  Local type definitions
@@ -375,6 +376,20 @@ static HC_BT_HDR *acl_rx_frame_buffer_alloc (void)
             }
             p_return_buf = NULL;
         }
+        /* check for invalid hci length */
+        if(hci_len < L2CAP_HEADER_SIZE)
+        {
+            ALOGE("Invalid HCI length of L2CAP packet: return NULL");
+            return NULL;
+        }
+
+        /* check for invalid l2cap payload length */
+        if ((total_len < (hci_len - L2CAP_HEADER_SIZE)) || ((total_len + HCI_ACL_PREAMBLE_SIZE + \
+                L2CAP_HEADER_SIZE + BT_HC_HDR_SIZE) > L2CAP_MAX_DATA_SIZE))
+        {
+            ALOGE("Invalid L2CAP payload length: return NULL");
+            return NULL;
+        }
 
         /* Allocate a buffer for message */
         if (bt_hc_cbacks)
@@ -410,9 +425,15 @@ static HC_BT_HDR *acl_rx_frame_buffer_alloc (void)
         {
             /* Packet continuation and found the original rx buffer */
             uint8_t *p_f = p = (uint8_t *)(p_return_buf + 1) + 2;
-
+            uint16_t tot_l2c_len;
             STREAM_TO_UINT16 (total_len, p);
+            STREAM_TO_UINT16 (tot_l2c_len, p);
 
+            if((tot_l2c_len - (total_len - L2CAP_HEADER_SIZE)) < hci_len)
+            {
+                ALOGE("Invalid L2CAP Con't Packet: return NULL ");
+                return NULL;
+            }
             /* Update HCI header of first segment (base buffer) with new len */
             total_len += hci_len;
             UINT16_TO_STREAM (p_f, total_len);
@@ -718,6 +739,10 @@ uint16_t hci_mct_receive_evt_msg(void)
     uint8_t     msg_received;
     tHCI_RCV_CB  *p_cb=&mct_cb.rcv_evt;
     uint8_t     continue_fetch_looping = TRUE;
+#ifdef QCOM_WCN_SSR
+    uint8_t     dev_ssr_event[3] = { 0x10, 0x01, 0x0A };
+    uint8_t     reset;
+#endif
 
     while (continue_fetch_looping)
     {
@@ -726,15 +751,46 @@ uint16_t hci_mct_receive_evt_msg(void)
         {
             break;
         }
-
-        bytes_read++;
-        msg_received = FALSE;
-
-        switch (p_cb->rcv_state)
+#ifdef QCOM_WCN_SSR
+        reset = userial_dev_inreset();
+        if (reset)
         {
-        case MCT_RX_NEWMSG_ST:
-            /* Start of new message */
-            /* Initialize rx parameters */
+           /* Allocate a buffer for sending H/w error message */
+           if (bt_hc_cbacks)
+           {
+                len = 3 + BT_HC_HDR_SIZE;
+                p_cb->p_rcv_msg = \
+                  (HC_BT_HDR *) bt_hc_cbacks->alloc(len);
+           }
+           ALOGE("sending H/w error event to stack\n ");
+           if (p_cb->p_rcv_msg)
+           {
+               p_cb->p_rcv_msg->offset = 0;
+               p_cb->p_rcv_msg->layer_specific = 0;
+               p_cb->p_rcv_msg->event = MSG_HC_TO_STACK_HCI_EVT;
+               p_cb->p_rcv_msg->len = 3;
+               memcpy((uint8_t *)(p_cb->p_rcv_msg + 1),&dev_ssr_event, 3);
+               msg_received = TRUE;
+           }
+           else
+           {
+               msg_received = FALSE;
+           }
+           /* Next, wait for next message */
+           p_cb->rcv_state = MCT_RX_NEWMSG_ST;
+           continue_fetch_looping = FALSE;
+        }
+        else
+#endif
+        {
+          bytes_read++;
+          msg_received = FALSE;
+
+          switch (p_cb->rcv_state)
+          {
+            case MCT_RX_NEWMSG_ST:
+             /* Start of new message */
+               /* Initialize rx parameters */
             memset(p_cb->preload_buffer, 0 , 6);
             p_cb->preload_buffer[0] = byte;
             p_cb->preload_count = 1;
@@ -856,9 +912,10 @@ uint16_t hci_mct_receive_evt_msg(void)
             break;
         }
 
+       }
 
         /* If we received entire message, then send it to the task */
-        if (msg_received)
+        if (msg_received && p_cb->p_rcv_msg)
         {
             uint8_t intercepted = FALSE;
 
@@ -893,7 +950,7 @@ uint16_t hci_mct_receive_evt_msg(void)
 uint16_t hci_mct_receive_acl_msg(void)
 {
     uint16_t    bytes_read = 0;
-    uint8_t     byte;
+    uint8_t     byte,byte_start;
     uint16_t    msg_len, len;
     uint8_t     msg_received;
     tHCI_RCV_CB *p_cb=&mct_cb.rcv_acl;
@@ -934,7 +991,21 @@ uint16_t hci_mct_receive_acl_msg(void)
                 /* ACL data lengths are 16-bits */
                 msg_len = p_cb->preload_buffer[3];
                 msg_len = (msg_len << 8) + p_cb->preload_buffer[2];
-
+                if(msg_len == 0) {
+                    p_cb->rcv_state = MCT_RX_NEWMSG_ST;
+                    continue_fetch_looping = FALSE;
+                    break;
+                }
+                else if (msg_len <= 2) {
+                    byte_start = p_cb->preload_buffer[1];
+                    byte_start = ((byte_start >> 4) & 0x03);
+                    if(byte_start == ACL_RX_PKT_START) {
+                        ALOGW("Its Start packet:ACL_RX_PKT_START");
+                        p_cb->rcv_len = msg_len;
+                        p_cb->rcv_state = MCT_RX_IGNORE_ST;
+                        break;
+                    }
+                }
                 if (msg_len && (p_cb->preload_count == 4))
                 {
                     /* Check if this is a start packet */

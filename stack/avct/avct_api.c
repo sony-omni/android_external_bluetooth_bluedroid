@@ -112,6 +112,9 @@ void AVCT_Deregister(void)
 
     /* deregister PSM with L2CAP */
     L2CA_Deregister(AVCT_PSM);
+#if (AVCT_BROWSE_INCLUDED == TRUE)
+    L2CA_Deregister(AVCT_BR_PSM);
+#endif
 }
 
 /*******************************************************************************
@@ -262,7 +265,7 @@ UINT16 AVCT_CreateBrowse (UINT8 handle, UINT8 role)
     if (role == AVCT_INT)
     {
         /* the link control block must exist before this function is called as INT. */
-        if (p_ccb->p_lcb == NULL)
+        if ((p_ccb->p_lcb == NULL) || (p_ccb->p_lcb->allocated == 0))
         {
             result = AVCT_NOT_OPEN;
         }
@@ -458,7 +461,13 @@ UINT16 AVCT_MsgReq(UINT8 handle, UINT8 label, UINT8 cr, BT_HDR *p_msg)
             else
             {
                 p_ccb->p_bcb = avct_bcb_by_lcb(p_ccb->p_lcb);
-                avct_bcb_event(p_ccb->p_bcb, AVCT_LCB_UL_MSG_EVT, (tAVCT_LCB_EVT *) &ul_msg);
+                if (p_ccb->p_bcb)
+                    avct_bcb_event(p_ccb->p_bcb, AVCT_LCB_UL_MSG_EVT, (tAVCT_LCB_EVT *) &ul_msg);
+                else
+                {
+                    result = AVCT_BAD_HANDLE;
+                    GKI_freebuf(p_msg);
+                }
             }
         }
         /* send msg event to lcb */

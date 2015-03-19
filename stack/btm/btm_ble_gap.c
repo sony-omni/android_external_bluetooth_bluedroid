@@ -1112,7 +1112,7 @@ UINT8 *BTM_CheckAdvData( UINT8 *p_adv, UINT8 type, UINT8 *p_length)
 
     STREAM_TO_UINT8(length, p);
 
-    while ( length && (p - p_adv <= BTM_BLE_CACHE_ADV_DATA_MAX))
+    while ( length && (p - p_adv <= BTM_BLE_ADV_DATA_LEN_MAX))
     {
         STREAM_TO_UINT8(adv_type, p);
 
@@ -1167,7 +1167,7 @@ UINT8 *btm_ble_build_adv_data(tBTM_BLE_AD_MASK *p_data_mask, UINT8 **p_dst,
             data_mask &= ~BTM_BLE_AD_BIT_FLAGS;
         }
         /* appearance data */
-        if (len > 3 && data_mask & BTM_BLE_AD_BIT_APPEARANCE)
+        if (len > 3 && data_mask & BTM_BLE_AD_BIT_APPEARANCE && p_data)
         {
             *p++ = 3; /* length */
             *p++ = BTM_BLE_AD_TYPE_APPEARANCE;
@@ -1182,9 +1182,10 @@ UINT8 *btm_ble_build_adv_data(tBTM_BLE_AD_MASK *p_data_mask, UINT8 **p_dst,
         {
             if (strlen(btm_cb.cfg.bd_name) > (UINT16)(len - MIN_ADV_LENGTH))
             {
-                *p++ = len - MIN_ADV_LENGTH + 1;
+                cp_len = len- MIN_ADV_LENGTH;
+                *p++ = cp_len + 1;
                 *p++ = BTM_BLE_AD_TYPE_NAME_SHORT;
-                ARRAY_TO_STREAM(p, btm_cb.cfg.bd_name, len - MIN_ADV_LENGTH);
+                ARRAY_TO_STREAM(p, btm_cb.cfg.bd_name, cp_len);
             }
             else
             {
@@ -1215,7 +1216,7 @@ UINT8 *btm_ble_build_adv_data(tBTM_BLE_AD_MASK *p_data_mask, UINT8 **p_dst,
             data_mask &= ~BTM_BLE_AD_BIT_MANU;
         }
         /* TX power */
-        if (len > MIN_ADV_LENGTH && data_mask & BTM_BLE_AD_BIT_TX_PWR)
+        if (len > MIN_ADV_LENGTH && data_mask & BTM_BLE_AD_BIT_TX_PWR && p_data)
         {
             *p++ = MIN_ADV_LENGTH;
             *p++ = BTM_BLE_AD_TYPE_TX_PWR;
@@ -1716,13 +1717,28 @@ tBTM_STATUS btm_ble_start_inquiry (UINT8 mode, UINT8   duration)
 
     if (!BTM_BLE_IS_SCAN_ACTIVE(p_ble_cb->scan_activity))
     {
-        btm_update_scanner_filter_policy(SP_ADV_ALL);
-
+        btsnd_hcic_ble_set_scan_params (BTM_BLE_SCAN_MODE_ACTI,
+                                        BTM_BLE_LOW_LATENCY_SCAN_INT,
+                                        BTM_BLE_LOW_LATENCY_SCAN_WIN,
+                                        btm_cb.ble_ctr_cb.addr_mgnt_cb.own_addr_type,
+                                        SP_ADV_ALL);
 #if (defined BLE_PRIVACY_SPT && BLE_PRIVACY_SPT == TRUE)
         /* enable IRK list */
         btm_ble_vendor_irk_list_known_dev (TRUE);
 #endif
         status = btm_ble_start_scan(BTM_BLE_DUPLICATE_DISABLE);
+    }
+    else if((p_ble_cb->inq_var.scan_interval != BTM_BLE_LOW_LATENCY_SCAN_INT) ||
+            (p_ble_cb->inq_var.scan_window != BTM_BLE_LOW_LATENCY_SCAN_WIN))
+    {
+        BTM_TRACE_DEBUG("%s, restart LE scan with low latency scan params", __FUNCTION__);
+        btsnd_hcic_ble_set_scan_enable (BTM_BLE_SCAN_DISABLE, BTM_BLE_DUPLICATE_ENABLE);
+        btsnd_hcic_ble_set_scan_params (BTM_BLE_SCAN_MODE_ACTI,
+                                        BTM_BLE_LOW_LATENCY_SCAN_INT,
+                                        BTM_BLE_LOW_LATENCY_SCAN_WIN,
+                                        btm_cb.ble_ctr_cb.addr_mgnt_cb.own_addr_type,
+                                        SP_ADV_ALL);
+        btsnd_hcic_ble_set_scan_enable (BTM_BLE_SCAN_ENABLE, BTM_BLE_DUPLICATE_DISABLE);
     }
 
     if (status == BTM_CMD_STARTED)
@@ -1735,7 +1751,7 @@ tBTM_STATUS btm_ble_start_inquiry (UINT8 mode, UINT8   duration)
         if (duration != 0)
         {
             /* start inquiry timer */
-            btu_start_timer (&p_inq->inq_timer_ent, BTU_TTYPE_BLE_INQUIRY, duration);
+            btu_start_timer (&p_ble_cb->inq_var.inq_timer_ent, BTU_TTYPE_BLE_INQUIRY, duration);
         }
     }
 
@@ -2435,10 +2451,11 @@ void btm_ble_process_adv_pkt (UINT8 *p_data)
 #endif
 
 #if (defined BLE_PRIVACY_SPT && BLE_PRIVACY_SPT == TRUE)
-    /* map address to security record */
-    btm_public_addr_to_random_pseudo(bda, &addr_type);
-    BTM_TRACE_ERROR("new address: %02x:%02x:%02x:%02x:%02x:%02x",
-                     bda[0], bda[1], bda[2], bda[3], bda[4], bda[5]);
+        match = btm_cb.cmn_ble_vsc_cb.rpa_offloading;
+        /* map address to security record */
+        btm_public_addr_to_random_pseudo(bda, &addr_type, FALSE);
+        BTM_TRACE_ERROR("new address: %02x:%02x:%02x:%02x:%02x:%02x",
+                      bda[0], bda[1], bda[2], bda[3], bda[4], bda[5]);
 #endif
 
         /* Only process the results if the inquiry is still active */
@@ -2449,7 +2466,7 @@ void btm_ble_process_adv_pkt (UINT8 *p_data)
                                      bda[0],bda[1],bda[2],bda[3],bda[4],bda[5]);
 #if (defined BLE_PRIVACY_SPT && BLE_PRIVACY_SPT == TRUE)
 #if SMP_INCLUDED == TRUE
-        /* always do RRA resolution on host */
+        /* do RPA resolution on host if rpa offloading is disabled */
         if (!match && BTM_BLE_IS_RESOLVE_BDA(bda))
         {
             btm_ble_resolve_random_addr(bda, btm_ble_resolve_random_addr_on_adv, p_data);
@@ -2660,6 +2677,13 @@ void btm_ble_stop_inquiry(void)
     /* If no more scan activity, stop LE scan now */
     if (!BTM_BLE_IS_SCAN_ACTIVE(p_ble_cb->scan_activity))
         btm_ble_stop_scan();
+    else if((p_ble_cb->inq_var.scan_interval != BTM_BLE_LOW_LATENCY_SCAN_INT) ||
+            (p_ble_cb->inq_var.scan_window != BTM_BLE_LOW_LATENCY_SCAN_WIN))
+    {
+        BTM_TRACE_DEBUG("%s: setting default params for ongoing observe", __FUNCTION__);
+        btm_ble_stop_scan();
+        btm_ble_start_scan(BTM_BLE_DUPLICATE_DISABLE);
+    }
 
     /* If we have a callback registered for inquiry complete, call it */
     BTM_TRACE_DEBUG ("BTM Inq Compl Callback: status 0x%02x, num results %d",
@@ -3006,23 +3030,21 @@ void btm_ble_read_remote_features_complete(UINT8 *p)
 
     STREAM_TO_UINT8(status, p);
     /* if LE read remote feature failed, expect disconnect complete to be received */
-    if (status == HCI_SUCCESS)
+    STREAM_TO_UINT16 (handle, p);
+    /* Look up the connection by handle and copy features */
+    for (xx = 0; xx < MAX_L2CAP_LINKS; xx++, p_acl_cb++)
     {
-        STREAM_TO_UINT16 (handle, p);
-
-        /* Look up the connection by handle and copy features */
-        for (xx = 0; xx < MAX_L2CAP_LINKS; xx++, p_acl_cb++)
+        if ((p_acl_cb->in_use) && (p_acl_cb->hci_handle == handle))
         {
-            if ((p_acl_cb->in_use) && (p_acl_cb->hci_handle == handle))
+            if (status == HCI_SUCCESS)
             {
                 STREAM_TO_ARRAY(p_acl_cb->peer_le_features, p, BD_FEATURES_LEN);
-                /*notify link up here */
-                l2cble_notify_le_connection (p_acl_cb->remote_addr);
-                break;
             }
+            /*notify link up here */
+            l2cble_notify_le_connection (p_acl_cb->remote_addr);
+            break;
         }
     }
-
 }
 
 /*******************************************************************************

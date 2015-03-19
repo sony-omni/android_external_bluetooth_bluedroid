@@ -850,9 +850,12 @@ void bta_gattc_reset_discover_st(tBTA_GATTC_SERV *p_srcb, tBTA_GATT_STATUS statu
 *******************************************************************************/
 void bta_gattc_disc_close(tBTA_GATTC_CLCB *p_clcb, tBTA_GATTC_DATA *p_data)
 {
-    APPL_TRACE_DEBUG("Discovery cancel conn_id=%d",p_clcb->bta_conn_id);
+    APPL_TRACE_DEBUG("Discovery cancel conn_id=%d, disc_active=%d",p_clcb->bta_conn_id, p_clcb->disc_active);
     if (p_clcb->disc_active)
+    {
         bta_gattc_reset_discover_st(p_clcb->p_srcb, BTA_GATT_ERROR);
+        bta_gattc_sm_execute(p_clcb, BTA_GATTC_API_CLOSE_EVT, p_data);
+    }
     else
         p_clcb->state = BTA_GATTC_CONN_ST;
 }
@@ -1008,8 +1011,15 @@ void bta_gattc_start_discover(tBTA_GATTC_CLCB *p_clcb, tBTA_GATTC_DATA *p_data)
 *******************************************************************************/
 void bta_gattc_disc_cmpl(tBTA_GATTC_CLCB *p_clcb, tBTA_GATTC_DATA *p_data)
 {
-    tBTA_GATTC_DATA *p_q_cmd = p_clcb->p_q_cmd;
+    tBTA_GATTC_DATA *p_q_cmd = NULL;
     UNUSED(p_data);
+
+    if( NULL == p_clcb)
+    {
+        APPL_TRACE_ERROR("Received NULL p_clcb");
+        return;
+    }
+    p_q_cmd = p_clcb->p_q_cmd;
 
     APPL_TRACE_DEBUG("bta_gattc_disc_cmpl conn_id=%d",p_clcb->bta_conn_id);
 
@@ -1017,7 +1027,8 @@ void bta_gattc_disc_cmpl(tBTA_GATTC_CLCB *p_clcb, tBTA_GATTC_DATA *p_data)
     if(p_clcb->transport == BTA_TRANSPORT_LE)
         L2CA_EnableUpdateBleConnParams(p_clcb->p_srcb->server_bda, TRUE);
 #endif
-    p_clcb->p_srcb->state = BTA_GATTC_SERV_IDLE;
+    if(p_clcb->p_srcb)
+        p_clcb->p_srcb->state = BTA_GATTC_SERV_IDLE;
     p_clcb->disc_active = FALSE;
 
     if (p_clcb->status != GATT_SUCCESS)
@@ -1485,7 +1496,8 @@ void  bta_gattc_op_cmpl(tBTA_GATTC_CLCB *p_clcb, tBTA_GATTC_DATA *p_data)
             APPL_TRACE_ERROR("No pending command");
             return;
         }
-        if (p_clcb->p_q_cmd->hdr.event != bta_gattc_opcode_to_int_evt[op - GATTC_OPTYPE_READ])
+        if (((op - GATTC_OPTYPE_READ) < (UINT8)(sizeof(bta_gattc_opcode_to_int_evt)/sizeof(UINT16))) &&
+                (p_clcb->p_q_cmd->hdr.event != bta_gattc_opcode_to_int_evt[op - GATTC_OPTYPE_READ]))
         {
             mapped_op = p_clcb->p_q_cmd->hdr.event - BTA_GATTC_API_READ_EVT + GATTC_OPTYPE_READ;
             if ( mapped_op > GATTC_OPTYPE_INDICATION)   mapped_op = 0;
@@ -1879,6 +1891,9 @@ void bta_gattc_process_api_refresh(tBTA_GATTC_CB *p_cb, tBTA_GATTC_DATA * p_msg)
     if (p_srvc_cb != NULL)
     {
         /* try to find a CLCB */
+        APPL_TRACE_DEBUG( "%s : connected = %d  num_clcb = %d", __FUNCTION__,
+                               p_srvc_cb->connected, p_srvc_cb->num_clcb );
+
         if (p_srvc_cb->connected && p_srvc_cb->num_clcb != 0)
         {
             for (i = 0; i < BTA_GATTC_CLCB_MAX; i ++, p_clcb ++)
@@ -1891,11 +1906,23 @@ void bta_gattc_process_api_refresh(tBTA_GATTC_CB *p_cb, tBTA_GATTC_DATA * p_msg)
             }
             if (found)
             {
-                bta_gattc_sm_execute(p_clcb, BTA_GATTC_INT_DISCOVER_EVT, NULL);
+                APPL_TRACE_DEBUG("%s : found service record in cache, ", __FUNCTION__);
+                if (p_msg->hdr.layer_specific==BTA_GATTC_REFRESH_NO_DISCOVERY)
+                {
+                    APPL_TRACE_DEBUG("%s : NO_DISCOVERY flag set "
+                                        "not invoking discovery", __FUNCTION__ );
+                }
+                else
+                {
+                    APPL_TRACE_DEBUG("%s : invoking discovery", __FUNCTION__ );
+                    bta_gattc_sm_execute(p_clcb, BTA_GATTC_INT_DISCOVER_EVT, NULL);
+                }
                 return;
             }
         }
         /* in all other cases, mark it and delete the cache */
+        APPL_TRACE_DEBUG( "%s : Clearing cache ", __FUNCTION__ );
+
         if (p_srvc_cb->p_srvc_cache != NULL)
         {
             while (p_srvc_cb->cache_buffer.p_first)

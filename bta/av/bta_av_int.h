@@ -209,6 +209,7 @@ typedef struct
     char                p_service_name[BTA_SERVICE_NAME_LEN+1];
     UINT8               app_id;
     tBTA_AV_DATA_CBACK       *p_app_data_cback;
+    UINT16              service_uuid;
 } tBTA_AV_API_REG;
 
 
@@ -461,6 +462,7 @@ typedef union
 /* Bitmap for collision, coll_mask */
 #define BTA_AV_COLL_INC_TMR             0x01 /* Timer is running for incoming L2C connection */
 #define BTA_AV_COLL_API_CALLED          0x02 /* API open was called while incoming timer is running */
+#define BTA_AV_COLL_SETCONFIG_IND    0x04 /* SetConfig indication has been called by remote */
 
 /* type for AV stream control block */
 typedef struct
@@ -514,6 +516,7 @@ typedef struct
     UINT8               q_tag;          /* identify the associated q_info union member */
     BOOLEAN             no_rtp_hdr;     /* TRUE if add no RTP header*/
     UINT16              uuid_int;       /*intended UUID of Initiator to connect to */
+    BOOLEAN             skip_sdp;       /* Decides if sdp to be done prior to profile connection */
 } tBTA_AV_SCB;
 
 #define BTA_AV_RC_ROLE_MASK     0x10

@@ -227,6 +227,7 @@ typedef struct
 #define BT_PSM_AVCTP_13                 0x001B /* Advanced Control - Browsing */
 #define BT_PSM_UDI_CP                   0x001D /* Unrestricted Digital Information Profile C-Plane  */
 #define BT_PSM_ATT                      0x001F /* Attribute Protocol  */
+#define BT_PSM_OPP_1_2                  0x1487 /* OPP PSM for the obex over L2CAP */
 
 
 /* These macros extract the HCI opcodes from a buffer
@@ -292,6 +293,11 @@ typedef struct
 #define BE_STREAM_TO_UINT16(u16, p) {u16 = (UINT16)(((UINT16)(*(p)) << 8) + (UINT16)(*((p) + 1))); (p) += 2;}
 #define BE_STREAM_TO_UINT24(u32, p) {u32 = (((UINT32)(*((p) + 2))) + ((UINT32)(*((p) + 1)) << 8) + ((UINT32)(*(p)) << 16)); (p) += 3;}
 #define BE_STREAM_TO_UINT32(u32, p) {u32 = ((UINT32)(*((p) + 3)) + ((UINT32)(*((p) + 2)) << 8) + ((UINT32)(*((p) + 1)) << 16) + ((UINT32)(*(p)) << 24)); (p) += 4;}
+#define BE_STREAM_TO_UINT64(u64, p) {u64 = ((UINT64)(*((p) + 7)) + ((UINT64)(*((p) + 6)) << 8) + \
+                                    ((UINT64)(*((p) + 5)) << 16) + ((UINT64)(*((p) + 4)) << 24) + \
+                                    ((UINT64)(*((p) + 3)) << 32) + ((UINT64)(*((p) + 2)) << 40) + \
+                                    ((UINT64)(*((p) + 1)) << 48) + ((UINT64)(*(p)) << 56)); \
+                                    (p) += 8;}
 #define BE_STREAM_TO_ARRAY(p, a, len) {register int ijk; for (ijk = 0; ijk < len; ijk++) ((UINT8 *) a)[ijk] = *p++;}
 
 

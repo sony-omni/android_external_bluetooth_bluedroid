@@ -391,6 +391,7 @@ typedef struct t_l2c_linkcb
     tL2C_CCB            *p_pending_ccb;             /* ccb of waiting channel during link disconnect */
     TIMER_LIST_ENT      info_timer_entry;           /* Timer entry for info resp timeout evt */
     BD_ADDR             remote_bd_addr;             /* The BD address of the remote     */
+    BD_NAME             remote_bd_name;             /* The BD name of the remote        */
 
     UINT8               link_role;                  /* Master or slave                  */
     UINT8               id;
@@ -456,7 +457,7 @@ typedef struct t_l2c_linkcb
     tL2C_RR_SERV        rr_serv[L2CAP_NUM_CHNL_PRIORITY];
     UINT8               rr_pri;                             /* current serving priority group */
 #endif
-
+    BOOLEAN             is_collision;
 } tL2C_LCB;
 
 /* Define the L2CAP control structure

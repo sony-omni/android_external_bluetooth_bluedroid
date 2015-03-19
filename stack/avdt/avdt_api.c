@@ -197,7 +197,6 @@ void AVDT_SINK_Activate()
         if ((p_scb->allocated) && (p_scb->cs.tsep == AVDT_TSEP_SNK))
         {
             AVDT_TRACE_DEBUG("AVDT_SINK_Activate found scb");
-            p_scb->sink_activated = TRUE;
             /* update in_use */
             p_scb->in_use = FALSE;
             break;
@@ -228,12 +227,34 @@ void AVDT_SINK_Deactivate()
         if ((p_scb->allocated) && (p_scb->cs.tsep == AVDT_TSEP_SNK))
         {
             AVDT_TRACE_DEBUG("AVDT_SINK_Deactivate, found scb");
-            p_scb->sink_activated = FALSE;
             /* update in_use */
             p_scb->in_use = TRUE;
             break;
         }
     }
+}
+
+UINT16 AVDT_AbortReq(UINT8 handle)
+{
+    tAVDT_SCB       *p_scb = NULL;
+    UINT16          result = AVDT_SUCCESS;
+    tAVDT_SCB_EVT   evt;
+
+    AVDT_TRACE_ERROR("AVDT_AbortReq");
+
+    /* map handle to scb */
+    if ((p_scb = avdt_scb_by_hdl(handle)) == NULL)
+    {
+        result = AVDT_BAD_HANDLE;
+        AVDT_TRACE_ERROR("Improper SCB, can not abort the stream");
+    }
+    else
+    /* send event to scb */
+    {
+        avdt_scb_event(p_scb, AVDT_SCB_API_ABORT_REQ_EVT, &evt);
+    }
+
+    return result;
 }
 
 /*******************************************************************************

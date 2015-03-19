@@ -739,6 +739,12 @@ UINT16 BTM_IsInquiryActive (void)
     return(btm_cb.btm_inq_vars.inq_active);
 }
 
+UINT8 BTM_IsRnrActive (void)
+{
+    BTM_TRACE_API ("BTM_IsRNRActive");
+
+    return (btm_cb.btm_inq_vars.remname_active);
+}
 
 
 /*******************************************************************************
@@ -2208,7 +2214,7 @@ void btm_process_inq_results (UINT8 *p, UINT8 inq_res_mode)
         */
         else if (p_i->inq_count == p_inq->inq_counter
 #if (BLE_INCLUDED == TRUE )
-            && (p_i->inq_info.results.device_type & BT_DEVICE_TYPE_BREDR)
+            && (p_i->inq_info.results.device_type == BT_DEVICE_TYPE_BREDR)
 #endif
             )
             is_new = FALSE;
@@ -2230,6 +2236,12 @@ void btm_process_inq_results (UINT8 *p, UINT8 inq_res_mode)
             p_cur->dev_class[1]       = dc[1];
             p_cur->dev_class[2]       = dc[2];
             p_cur->clock_offset       = clock_offset  | BTM_CLOCK_OFFSET_VALID;
+
+            BTM_TRACE_WARNING ("btm_process_inq_results: BDA: %02x-%02x-%02x-%02x-%02x-%02x",
+                        bda[0], bda[1], bda[2],bda[3], bda[4], bda[5]);
+
+            BTM_TRACE_WARNING ("btm_process_inq_results: Dev class: %02x-%02x-%02x",
+                        p_cur->dev_class[0], p_cur->dev_class[1], p_cur->dev_class[2]);
 
             p_i->time_of_resp = GKI_get_tick_count ();
 

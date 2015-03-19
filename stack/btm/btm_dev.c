@@ -54,13 +54,14 @@ static tBTM_SEC_DEV_REC *btm_find_oldest_dev (void);
 **                  trusted_mask     - Bitwise OR of services that do not
 **                                     require authorization. (array of UINT32)
 **                  link_key         - Connection link key. NULL if unknown.
+**                  pin_len          - length of pin key
 **
 ** Returns          TRUE if added OK, else FALSE
 **
 *******************************************************************************/
 BOOLEAN BTM_SecAddDevice (BD_ADDR bd_addr, DEV_CLASS dev_class, BD_NAME bd_name,
                           UINT8 *features, UINT32 trusted_mask[],
-                          LINK_KEY link_key, UINT8 key_type, tBTM_IO_CAP io_cap)
+                          LINK_KEY link_key, UINT8 key_type, tBTM_IO_CAP io_cap, UINT8 pin_len)
 {
     tBTM_SEC_DEV_REC  *p_dev_rec;
     int               i, j;
@@ -146,6 +147,8 @@ BOOLEAN BTM_SecAddDevice (BD_ADDR bd_addr, DEV_CLASS dev_class, BD_NAME bd_name,
         memcpy (p_dev_rec->link_key, link_key, LINK_KEY_LEN);
         p_dev_rec->link_key_type = key_type;
     }
+
+    p_dev_rec->pin_key_len = pin_len;
 
 #if defined(BTIF_MIXED_MODE_INCLUDED) && (BTIF_MIXED_MODE_INCLUDED == TRUE)
     if (key_type  < BTM_MAX_PRE_SM4_LKEY_TYPE)
@@ -324,6 +327,8 @@ tBTM_SEC_DEV_REC *btm_sec_alloc_dev (BD_ADDR bd_addr)
     p_dev_rec->hci_handle = BTM_GetHCIConnHandle (bd_addr, BT_TRANSPORT_BR_EDR);
     p_dev_rec->timestamp = btm_cb.dev_rec_count++;
 
+    p_dev_rec->pin_key_len = 0;
+
     return(p_dev_rec);
 }
 
@@ -338,6 +343,8 @@ tBTM_SEC_DEV_REC *btm_sec_alloc_dev (BD_ADDR bd_addr)
 void btm_sec_free_dev (tBTM_SEC_DEV_REC *p_dev_rec)
 {
     p_dev_rec->sec_flags = 0;
+
+    p_dev_rec->pin_key_len = 0;
 
 #if BLE_INCLUDED == TRUE
     /* Clear out any saved BLE keys */
@@ -416,6 +423,12 @@ tBTM_SEC_DEV_REC *btm_find_dev_by_handle (UINT16 handle)
     tBTM_SEC_DEV_REC *p_dev_rec = &btm_cb.sec_dev_rec[0];
     int i;
 
+    if(handle == BTM_INVALID_HCI_HANDLE)
+    {
+        BTM_TRACE_DEBUG("btm_find_dev_by_handle: Invalid handle");
+        return (NULL);
+    }
+
     for (i = 0; i < BTM_SEC_MAX_DEVICE_RECORDS; i++, p_dev_rec++)
     {
         if ((p_dev_rec->sec_flags & BTM_SEC_IN_USE)
@@ -424,6 +437,31 @@ tBTM_SEC_DEV_REC *btm_find_dev_by_handle (UINT16 handle)
             ||(p_dev_rec->ble_hci_handle == handle)
 #endif
                 ))
+            return(p_dev_rec);
+    }
+    return(NULL);
+}
+
+/*******************************************************************************
+**
+** Function         btm_find_dev_by_sec_state
+**
+** Description      Look for the record in the device database for the record
+**                  with specific security state
+**
+** Returns          Pointer to the record or NULL
+**
+*******************************************************************************/
+tBTM_SEC_DEV_REC *btm_find_dev_by_sec_state(UINT8 sec_state)
+{
+    tBTM_SEC_DEV_REC *p_dev_rec = &btm_cb.sec_dev_rec[0];
+    int i;
+    BTM_TRACE_DEBUG("btm_find_dev_by_sec_state: sec_state : %d", sec_state);
+
+    for (i = 0; i < BTM_SEC_MAX_DEVICE_RECORDS; i++, p_dev_rec++)
+    {
+        if ((p_dev_rec->sec_flags & BTM_SEC_IN_USE)
+            && (p_dev_rec->sec_state == sec_state))
             return(p_dev_rec);
     }
     return(NULL);

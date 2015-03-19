@@ -35,6 +35,10 @@
 #include "btm_int.h"
 #include "l2c_int.h"
 
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+#include <cutils/properties.h>
+#endif
+
 #if BLE_INCLUDED == TRUE
 #include "gatt_int.h"
 
@@ -122,6 +126,13 @@ static void btm_set_lmp_features_host_may_support (UINT8 max_page_number);
 static void btm_get_local_features (void);
 static void btm_issue_host_support_for_lmp_features (void);
 static void btm_read_local_supported_cmds (UINT8 local_controller_id);
+static void btm_hci_vs_event_handler(UINT8 evt_len, UINT8 *p);
+
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+#if (defined(BTM_READ_CTLR_CAP_INCLUDED) && BTM_READ_CTLR_CAP_INCLUDED == TRUE)
+static void btm_vendor_capability_vsc_cmpl_cback (tBTM_VSC_CMPL *p_vcs_cplt_params);
+#endif
+#endif
 
 #if BLE_INCLUDED == TRUE
 static void btm_read_ble_local_supported_features (void);
@@ -162,9 +173,15 @@ void btm_dev_init (void)
                                          BTM_SCO_PKT_TYPES_MASK_EV4 +
                                          BTM_SCO_PKT_TYPES_MASK_EV5;
 
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+    btm_cb.btm_sec_conn_supported = FALSE;
+    btm_cb.btm_sec_conn_only_mode = FALSE;
+#endif
+
     btm_cb.first_disabled_channel = 0xff; /* To allow disabling 0th channel alone */
     btm_cb.last_disabled_channel = 0xff; /* To allow disabling 0th channel alone */
 
+    BTM_RegisterForVSEvents(btm_hci_vs_event_handler, TRUE);
 #if (BTM_AUTOMATIC_HCI_RESET == TRUE)
 
 #if (BTM_FIRST_RESET_DELAY > 0)
@@ -447,6 +464,7 @@ void btm_read_ble_wl_size(void)
     /* Send a Read Buffer Size message to the Host Controller. */
     btsnd_hcic_ble_read_white_list_size();
 }
+
 /*******************************************************************************
 **
 ** Function         btm_get_ble_buffer_size
@@ -1146,12 +1164,21 @@ static void btm_decode_ext_features_page (UINT8 page_number, const UINT8 *p_feat
 
     /* Extended Page 1 */
     case HCI_EXT_FEATURES_PAGE_1:
-        /* Nothing to do for page 1 */
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+        if (HCI_SECURE_CONN_HOST_SUPPORTED(p_features))
+        {
+            BTM_TRACE_WARNING("btm_decode_ext_features_page Secure conn Host support Enabled");
+        }
+#endif
         break;
-
     /* Extended Page 2 */
     case HCI_EXT_FEATURES_PAGE_2:
-        /* Nothing to do for page 2 */
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+        if (HCI_SECURE_CONN_CTRL_SUPPORTED(p_features))
+        {
+            BTM_TRACE_WARNING("btm_decode_ext_features_page Secure conn Controller support Enabled");
+        }
+#endif
         break;
 
     default:
@@ -1215,6 +1242,22 @@ void btm_reset_ctrlr_complete ()
         btm_decode_ext_features_page(i, p_devcb->local_lmp_features[i]);
     }
 
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+    if( (max_page_number == HCI_EXT_FEATURES_PAGE_2) &&
+        (HCI_SECURE_CONN_CTRL_SUPPORTED(p_devcb->local_lmp_features[HCI_EXT_FEATURES_PAGE_2])) &&
+        (HCI_SECURE_CONN_HOST_SUPPORTED(p_devcb->local_lmp_features[HCI_EXT_FEATURES_PAGE_1])))
+    {
+        btm_cb.btm_sec_conn_supported = TRUE;
+        char value[PROPERTY_VALUE_MAX];
+        if( (property_get("bluetooth.sec_conn_only_mode", value, "false")) &&
+                !strcmp(value, "true"))
+        {
+            BTM_TRACE_WARNING ("Bluetooth: Secure connection only mode Enabled");
+            btm_cb.btm_sec_conn_only_mode = TRUE;
+        }
+    }
+#endif
+
     /* If there was a callback address for reset complete, reset it */
     p_devcb->p_reset_cmpl_cb = NULL;
 
@@ -1263,6 +1306,43 @@ static void btm_issue_host_support_for_lmp_features (void)
         {
             btsnd_hcic_ble_write_host_supported(BTM_BLE_HOST_SUPPORT, 0);
         }
+        return;
+    }
+#endif
+
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+#if (defined(BTM_READ_CTLR_CAP_INCLUDED) && BTM_READ_CTLR_CAP_INCLUDED == TRUE)
+    /* send Vendor specific command to know PR2.0 or ROME 3.0 or above */
+    if (btm_cb.devcb.lmp_features_host_may_support & BTM_READ_CTLR_CAPABILITY )
+    {
+        if ( BTM_VendorSpecificCommand (HCI_BLE_VENDOR_CAP_OCF,
+                                    0,
+                                    NULL,
+                                    btm_vendor_capability_vsc_cmpl_cback)
+                                    != BTM_CMD_STARTED)
+        {
+            /* reset the Secure connection Host bit as it's dependent on VSC support */
+            if (btm_cb.devcb.lmp_features_host_may_support & BTM_HOST_MAY_SUPP_SECURE_CONN)
+            {
+                btm_cb.devcb.lmp_features_host_may_support &= ~BTM_HOST_MAY_SUPP_SECURE_CONN;
+            }
+
+            if (btm_cb.devcb.lmp_features_host_may_support & BTM_READ_CTLR_CAPABILITY)
+            {
+                btm_cb.devcb.lmp_features_host_may_support &= ~BTM_READ_CTLR_CAPABILITY;
+            }
+            BTM_TRACE_ERROR("Get_Vendor Capabilities Command Failed.");
+        }
+        else
+        {
+            return;
+        }
+    }
+#endif
+
+    if (btm_cb.devcb.lmp_features_host_may_support & BTM_HOST_MAY_SUPP_SECURE_CONN)
+    {
+        btsnd_hcic_write_sec_conn_host_support(HCI_SECURE_CONN_HOST_ENABLED);
         return;
     }
 #endif
@@ -1342,10 +1422,23 @@ static void btm_set_lmp_features_host_may_support (UINT8 max_page_number)
         /* nothing yet for HCI_EXT_FEATURES_PAGE_1 */
     }
 
-    if (max_page_number >= HCI_EXT_FEATURES_PAGE_1)
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+    if (max_page_number == HCI_EXT_FEATURES_PAGE_2)
     {
-        /* nothing yet for HCI_EXT_FEATURES_PAGE_2 */
+        if (HCI_SECURE_CONN_CTRL_SUPPORTED(btm_cb.devcb.local_lmp_features[HCI_EXT_FEATURES_PAGE_2]))
+        {
+            /* host may support secure connection if the Secure simple pairing(Host support)
+               bit is set */
+            if(btm_cb.devcb.lmp_features_host_may_support & BTM_HOST_MAY_SUPP_SSP)
+            {
+#if (defined(BTM_READ_CTLR_CAP_INCLUDED) && BTM_READ_CTLR_CAP_INCLUDED == TRUE)
+                btm_cb.devcb.lmp_features_host_may_support |= BTM_READ_CTLR_CAPABILITY;
+#endif
+                btm_cb.devcb.lmp_features_host_may_support |= BTM_HOST_MAY_SUPP_SECURE_CONN;
+            }
+        }
     }
+#endif
 
     if (btm_cb.devcb.lmp_features_host_may_support)
         btm_cb.devcb.lmp_features_host_may_support |= BTM_RE_READ_1ST_PAGE;
@@ -1534,6 +1627,20 @@ void btm_write_simple_paring_mode_complete (UINT8 *p)
     if (status != HCI_SUCCESS)
     {
         BTM_TRACE_WARNING("btm_write_simple_paring_mode_complete status: 0x%02x", status);
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+#if (defined(BTM_READ_CTLR_CAP_INCLUDED) && BTM_READ_CTLR_CAP_INCLUDED == TRUE)
+        /* reset the BTM_READ_CTLR_CAPABILITY  as it's not required */
+        if (btm_cb.devcb.lmp_features_host_may_support & BTM_READ_CTLR_CAPABILITY)
+        {
+            btm_cb.devcb.lmp_features_host_may_support &= ~BTM_READ_CTLR_CAPABILITY;
+        }
+#endif
+        /* reset the Secure connection Host bit as it's dependent on SSP support */
+        if (btm_cb.devcb.lmp_features_host_may_support & BTM_HOST_MAY_SUPP_SECURE_CONN)
+        {
+            btm_cb.devcb.lmp_features_host_may_support &= ~BTM_HOST_MAY_SUPP_SECURE_CONN;
+        }
+#endif
     }
 
     if (btm_cb.devcb.lmp_features_host_may_support & BTM_HOST_MAY_SUPP_SSP)
@@ -1542,6 +1649,78 @@ void btm_write_simple_paring_mode_complete (UINT8 *p)
         btm_issue_host_support_for_lmp_features();
     }
 }
+
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+/*******************************************************************************
+**
+** Function         btm_write_secure_conn_host_support_complete
+**
+** Description      This function is called when the command complete message
+**                  is received from the HCI for the write simple pairing mode
+**                  command.
+**
+** Returns          void
+**
+*******************************************************************************/
+void btm_write_secure_conn_host_support_complete (UINT8 *p)
+{
+    UINT8   status;
+
+    STREAM_TO_UINT8 (status, p);
+
+    if (status != HCI_SUCCESS)
+    {
+        BTM_TRACE_WARNING("btm_write_secure_conn_host_support_complete status: 0x%02x", status);
+    }
+
+    if (btm_cb.devcb.lmp_features_host_may_support & BTM_HOST_MAY_SUPP_SECURE_CONN)
+    {
+        btm_cb.devcb.lmp_features_host_may_support &= ~BTM_HOST_MAY_SUPP_SECURE_CONN;
+        btm_issue_host_support_for_lmp_features();
+    }
+}
+
+#if (defined(BTM_READ_CTLR_CAP_INCLUDED) && BTM_READ_CTLR_CAP_INCLUDED == TRUE)
+/*******************************************************************************
+**
+** Function         btm_vendor_capability_vsc_cmpl_cback
+**
+** Description      Command Complete callback for HCI_BLE_VENDOR_CAP_OCF
+**
+** Returns          void
+**
+*******************************************************************************/
+static void btm_vendor_capability_vsc_cmpl_cback (tBTM_VSC_CMPL *p_vcs_cplt_params)
+{
+    UINT8  status = 0xFF, *p;
+
+    /* Check status of command complete event */
+    if( (p_vcs_cplt_params) && (p_vcs_cplt_params->opcode == HCI_BLE_VENDOR_CAP_OCF)
+        && (p_vcs_cplt_params->param_len > 0 ))
+    {
+        p = p_vcs_cplt_params->p_param_buf;
+        STREAM_TO_UINT8  (status, p);
+    }
+
+    if (status != HCI_SUCCESS)
+    {
+        /* reset the Secure connection Host bit as it's dependent on VSC support */
+        if (btm_cb.devcb.lmp_features_host_may_support & BTM_HOST_MAY_SUPP_SECURE_CONN)
+        {
+            btm_cb.devcb.lmp_features_host_may_support &= ~BTM_HOST_MAY_SUPP_SECURE_CONN;
+        }
+    }
+
+    if (btm_cb.devcb.lmp_features_host_may_support & BTM_READ_CTLR_CAPABILITY)
+    {
+        btm_cb.devcb.lmp_features_host_may_support &= ~BTM_READ_CTLR_CAPABILITY;
+        btm_issue_host_support_for_lmp_features();
+    }
+
+    BTM_TRACE_EVENT("btm_vendor_capability_vsc_cmpl_cback: status=%d", status);
+}
+#endif
+#endif
 
 /*******************************************************************************
 **
@@ -1915,6 +2094,46 @@ tBTM_DEV_STATUS_CB *BTM_RegisterForDeviceStatusNotif (tBTM_DEV_STATUS_CB *p_cb)
     return (p_prev);
 }
 
+
+/*******************************************************************************
+**
+** Function         BTM_Hci_Raw_Command
+**
+** Description      Send  HCI raw command to the controller.
+**
+** Returns
+**      BTM_SUCCESS         Command sent. Does not expect command complete
+**                              event. (command cmpl callback param is NULL)
+**      BTM_CMD_STARTED     Command sent. Waiting for command cmpl event.
+**
+**
+*******************************************************************************/
+tBTM_STATUS BTM_Hci_Raw_Command(UINT16 opcode, UINT8 param_len,
+                              UINT8 *p_param_buf, tBTM_RAW_CMPL_CB *p_cb)
+{
+    void *p_buf;
+
+    BTM_TRACE_EVENT ("BTM: BTM_Hci_Raw_Command: Opcode: 0x%04X, ParamLen: %i.",
+                      opcode, param_len);
+
+    /* Allocate a buffer to hold HCI command plus the callback function */
+    p_buf = GKI_getbuf((UINT16)(sizeof(BT_HDR) + sizeof (tBTM_CMPL_CB *) +
+                            param_len + HCIC_PREAMBLE_SIZE));
+    if (p_buf != NULL)
+    {
+        btsnd_hcic_raw_cmd (p_buf, opcode, param_len, p_param_buf, (void *)p_cb);
+
+        /* Return value */
+        if (p_cb != NULL)
+            return BTM_CMD_STARTED;
+        else
+            return BTM_SUCCESS;
+    }
+    else
+        return BTM_NO_RESOURCES;
+
+}
+
 /*******************************************************************************
 **
 ** Function         BTM_VendorSpecificCommand
@@ -1980,6 +2199,35 @@ void btm_vsc_complete (UINT8 *p, UINT16 opcode, UINT16 evt_len,
         vcs_cplt_params.param_len = evt_len;    /* Number of bytes in return info */
         vcs_cplt_params.p_param_buf = p;
         (*p_vsc_cplt_cback)(&vcs_cplt_params);  /* Call the VSC complete callback function */
+    }
+}
+
+/*******************************************************************************
+**
+** Function         btm_hci_vs_event_handler
+**
+** Description      This function is called when HCI Vendor Specific
+**                  event was received from the HCI.
+**
+** Returns          void
+**
+*******************************************************************************/
+static void btm_hci_vs_event_handler(UINT8 evt_len, UINT8 *p)
+{
+    UINT8 vs_sub_event;
+    STREAM_TO_UINT8(vs_sub_event, p);
+    BTM_TRACE_EVENT("%s vendor specific sub event: 0x%2x", __FUNCTION__, vs_sub_event);
+    switch(vs_sub_event)
+    {
+    case 0xFF:
+        {
+            BTM_TRACE_EVENT("%s processing rssi threshold event", __FUNCTION__);
+            btm_handle_rssi_monitor_event(p, evt_len - 1);
+        }
+        break;
+    default:
+        BTM_TRACE_EVENT("%s do not handle this vendor specific event with vs_opcode: 0x%2x", __FUNCTION__, vs_sub_event);
+        break;
     }
 }
 

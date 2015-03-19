@@ -16,6 +16,7 @@
  *
  ******************************************************************************/
 
+#include "bt_target.h"
 #ifndef BTIF_SOCK_SDP_H
 #define BTIF_SOCK_SDP_H
 static const UINT8  UUID_OBEX_OBJECT_PUSH[] = {0x00, 0x00, 0x11, 0x05, 0x00, 0x00, 0x10, 0x00,
@@ -26,6 +27,13 @@ static const UINT8  UUID_MAPS_MAS[]         = {0x00, 0x00, 0x11, 0x32, 0x00, 0x0
                                                0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B, 0x34, 0xFB};
 static const UINT8  UUID_SPP[]              = {0x00, 0x00, 0x11, 0x01, 0x00, 0x00, 0x10, 0x00,
                                                0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B, 0x34, 0xFB};
+static const UINT8  UUID_FTP[]              = {0x00, 0x00, 0x11, 0x06, 0x00, 0x00, 0x10, 0x00,
+                                               0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B, 0x34, 0xFB};
+static const UINT8  UUID_DUN[]              = {0x00, 0x00, 0x11, 0x03, 0x00, 0x00, 0x10, 0x00,
+                                               0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B, 0x34, 0xFB};
+static const UINT8  UUID_SAP[]              = {0x00, 0x00, 0x11, 0x2D, 0x00, 0x00, 0x10, 0x00,
+                                               0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B, 0x34, 0xFB};
+#define RESERVED_SCN_FTP 20
 
 static inline BOOLEAN is_uuid_empty(const uint8_t* uuid)
 {
@@ -37,5 +45,11 @@ int add_rfc_sdp_rec(const char* name, const uint8_t* uuid, int scn);
 void del_rfc_sdp_rec(int handle);
 BOOLEAN is_reserved_rfc_channel(int channel);
 int get_reserved_rfc_channel(const uint8_t* uuid);
+
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+int add_l2c_sdp_rec(const char* name, const uint8_t* uuid, int psm);
+int get_reserved_l2c_channel(const uint8_t* uuid);
+void del_l2c_sdp_rec(int handle, const uint8_t* uuid);
+#endif
 
 #endif

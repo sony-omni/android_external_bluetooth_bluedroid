@@ -1,6 +1,8 @@
 /******************************************************************************
  *
  *  Copyright (c) 2014 The Android Open Source Project
+ *  Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ *  Not a Contribution.
  *  Copyright (C) 2009-2012 Broadcom Corporation
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,6 +51,7 @@
 #include "bta_av_api.h"
 #include "bta_hh_api.h"
 #include "bta_hf_client_api.h"
+#include "bta_hd_api.h"
 #include "avrc_defs.h"
 
 
@@ -247,6 +250,7 @@ const char* dump_property_type(bt_property_type_t type)
         CASE_RETURN_STR(BT_PROPERTY_ADAPTER_BONDED_DEVICES)
         CASE_RETURN_STR(BT_PROPERTY_ADAPTER_SCAN_MODE)
         CASE_RETURN_STR(BT_PROPERTY_REMOTE_FRIENDLY_NAME)
+        CASE_RETURN_STR(BT_PROPERTY_REMOTE_TRUST_VALUE)
 
         default:
             return "UNKNOWN PROPERTY ID";
@@ -283,6 +287,7 @@ const char* dump_dm_event(UINT16 event)
         CASE_RETURN_STR(BTA_DM_DEV_UNPAIRED_EVT)
         CASE_RETURN_STR(BTA_DM_HW_ERROR_EVT)
         CASE_RETURN_STR(BTA_DM_ENER_INFO_READ)
+        CASE_RETURN_STR(BTA_DM_REM_NAME_EVT)
 
         default:
             return "UNKNOWN DM EVENT";
@@ -387,6 +392,26 @@ const char* dump_hh_event(UINT16 event)
      }
 }
 
+const char* dump_hd_event(UINT16 event)
+{
+    switch(event)
+    {
+        CASE_RETURN_STR(BTA_HD_ENABLE_EVT)
+        CASE_RETURN_STR(BTA_HD_DISABLE_EVT)
+        CASE_RETURN_STR(BTA_HD_REGISTER_APP_EVT)
+        CASE_RETURN_STR(BTA_HD_UNREGISTER_APP_EVT)
+        CASE_RETURN_STR(BTA_HD_OPEN_EVT)
+        CASE_RETURN_STR(BTA_HD_CLOSE_EVT)
+        CASE_RETURN_STR(BTA_HD_GET_REPORT_EVT)
+        CASE_RETURN_STR(BTA_HD_SET_REPORT_EVT)
+        CASE_RETURN_STR(BTA_HD_SET_PROTOCOL_EVT)
+        CASE_RETURN_STR(BTA_HD_INTR_DATA_EVT)
+        CASE_RETURN_STR(BTA_HD_VC_UNPLUG_EVT)
+        CASE_RETURN_STR(BTA_HD_API_ERR_EVT)
+        default:
+            return "UNKNOWN MSG ID";
+     }
+}
 
 const char* dump_hf_conn_state(UINT16 event)
 {
@@ -510,6 +535,7 @@ const char *dump_rc_event(UINT8 event)
         CASE_RETURN_STR(BTA_AV_VENDOR_RSP_EVT)
         CASE_RETURN_STR(BTA_AV_META_MSG_EVT)
         CASE_RETURN_STR(BTA_AV_RC_FEAT_EVT)
+        CASE_RETURN_STR(BTA_AV_BROWSE_MSG_EVT)
         default:
             return "UNKNOWN_EVENT";
    }
@@ -528,7 +554,7 @@ const char * dump_rc_notification_event_id(UINT8 event_id)
         CASE_RETURN_STR(AVRC_EVT_SYSTEM_STATUS_CHANGE)
         CASE_RETURN_STR(AVRC_EVT_APP_SETTING_CHANGE)
         CASE_RETURN_STR(AVRC_EVT_VOLUME_CHANGE)
-
+        CASE_RETURN_STR(AVRC_EVT_NOW_PLAYING_CHANGE)
         default:
             return "Unhandled Event ID";
     }
@@ -552,6 +578,8 @@ const char*  dump_rc_pdu(UINT8 pdu)
         CASE_RETURN_STR(AVRC_PDU_REQUEST_CONTINUATION_RSP)
         CASE_RETURN_STR(AVRC_PDU_ABORT_CONTINUATION_RSP)
         CASE_RETURN_STR(AVRC_PDU_SET_ABSOLUTE_VOLUME)
+        CASE_RETURN_STR(AVRC_PDU_SET_ADDRESSED_PLAYER)
+        CASE_RETURN_STR(AVRC_PDU_CHANGE_PATH)
         default:
             return "Unknown PDU";
     }

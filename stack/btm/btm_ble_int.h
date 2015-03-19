@@ -62,6 +62,8 @@
 #define BTM_BLE_GAP_DISC_SCAN_WIN   18         /* scan_window = 11.25 ms= 0x0010 * 0.625 ms */
 #define BTM_BLE_GAP_ADV_INT         512         /* Tgap(gen_disc) = 1.28 s= 512 * 0.625 ms */
 #define BTM_BLE_GAP_LIM_TOUT        180          /* Tgap(lim_timeout) = 180s max */
+#define BTM_BLE_LOW_LATENCY_SCAN_INT   8000         /* Interval(scan_int) = 5s= 8000 * 0.625 ms */
+#define BTM_BLE_LOW_LATENCY_SCAN_WIN   8000         /* scan_window = 5s= 8000 * 0.625 ms */
 
 
 #define BTM_BLE_GAP_ADV_FAST_INT_1         48         /* TGAP(adv_fast_interval1) = 30(used) ~ 60 ms  = 48 *0.625 */
@@ -169,6 +171,7 @@ typedef struct
     tBLE_ADDR_TYPE              own_addr_type;         /* local device LE address type */
     BD_ADDR                     private_addr;
     BD_ADDR                     random_bda;
+    BD_ADDR                     multi_adv_bda;
     BOOLEAN                     busy;
     UINT16                       index;
     tBTM_BLE_RESOLVE_CBACK      *p_resolve_cback;
@@ -344,7 +347,8 @@ extern UINT8 btm_proc_smp_cback(tSMP_EVT event, BD_ADDR bd_addr, tSMP_EVT_DATA *
 extern tBTM_STATUS btm_ble_set_encryption (BD_ADDR bd_addr, void *p_ref_data, UINT8 link_role);
 extern void btm_ble_ltk_request(UINT16 handle, UINT8 rand[8], UINT16 ediv);
 extern tBTM_STATUS btm_ble_start_encrypt(BD_ADDR bda, BOOLEAN use_stk, BT_OCTET16 stk);
-extern void btm_ble_link_encrypted(BD_ADDR bd_addr, UINT8 encr_enable);
+extern void btm_ble_link_encrypted(BD_ADDR bd_addr, UINT8 encr_enable, UINT8 status);
+
 #endif
 
 /* LE device management functions */
@@ -384,6 +388,7 @@ extern BOOLEAN btm_execute_wl_dev_operation(void);
 /* direct connection utility */
 extern BOOLEAN btm_send_pending_direct_conn(void);
 extern void btm_ble_enqueue_direct_conn_req(void *p_param);
+extern void btm_ble_dequeue_direct_conn_req(BD_ADDR rem_bda);
 
 /* BLE address management */
 extern void btm_gen_resolvable_private_addr (void *p_cmd_cplt_cback);
@@ -408,7 +413,7 @@ extern BOOLEAN btm_ble_clear_topology_mask(tBTM_BLE_STATE_MASK request_state);
 extern BOOLEAN btm_ble_set_topology_mask(tBTM_BLE_STATE_MASK request_state);
 
 /* BLE address mapping with CS feature */
-extern BOOLEAN btm_public_addr_to_random_pseudo(BD_ADDR bd_addr, UINT8 *p_addr_type);
+extern BOOLEAN btm_public_addr_to_random_pseudo(BD_ADDR bd_addr, UINT8 *p_addr_type, BOOLEAN read_irk);
 extern BOOLEAN btm_random_pseudo_to_public(BD_ADDR random_pseudo, UINT8 *p_static_addr_type);
 extern void btm_ble_refresh_rra(BD_ADDR pseudo_bda, BD_ADDR rra);
 

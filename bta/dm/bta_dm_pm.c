@@ -29,7 +29,7 @@
 #include "bta_api.h"
 #include "bta_dm_int.h"
 #include "btm_api.h"
-
+#include "btm_int.h"
 #include <string.h>
 
 
@@ -51,6 +51,9 @@ static void bta_dm_pm_set_sniff_policy(tBTA_DM_PEER_DEVICE *p_dev, BOOLEAN bDisa
 #endif
 static void bta_dm_pm_ssr(BD_ADDR peer_addr);
 #endif
+
+/* Sniff interval for active ESCO and HID connection */
+#define SNIFF_INTERVAL_ACTIVE_HID_ESCO 12
 
 tBTA_DM_CONNECTED_SRVCS bta_dm_conn_srvcs;
 
@@ -157,24 +160,28 @@ static void bta_dm_pm_cback(tBTA_SYS_CONN_STATUS status, UINT8 id, UINT8 app_id,
     UINT16 policy_setting;
     tBTM_STATUS btm_status;
     tBTM_VERSION_INFO vers;
+    UINT8 *p = NULL;
 #if (BTM_SSR_INCLUDED == TRUE)
     int               index = BTA_DM_PM_SSR0;
 #endif
     tBTA_DM_PEER_DEVICE *p_dev;
+    tACL_CONN   *p_dev_rec;
 
     APPL_TRACE_DEBUG("bta_dm_pm_cback: st(%d), id(%d), app(%d)", status, id, app_id);
 
     btm_status = BTM_ReadLocalVersion (&vers);
     p_dev = bta_dm_find_peer_device(peer_addr);
-
+    p_dev_rec = btm_bda_to_acl(peer_addr, BT_TRANSPORT_BR_EDR);
     /* Disable/Enable sniff policy on the SCO link if sco Up/Down. Will be removed in 2.2*/
     if ((p_dev) &&
         ((status == BTA_SYS_SCO_OPEN) || (status == BTA_SYS_SCO_CLOSE)) )
     {
         if ((btm_status == BTM_SUCCESS) &&
-            (vers.manufacturer ==  LMP_COMPID_BROADCOM) &&
-            (vers.hci_version < HCI_PROTO_VERSION_2_0))
+            (((vers.manufacturer ==  LMP_COMPID_BROADCOM) &&
+            (vers.hci_version < HCI_PROTO_VERSION_2_0)) || (p_dev_rec && (p_dev_rec->lmp_version < 2))))
         {
+            if (p_dev_rec)
+            APPL_TRACE_DEBUG("bta_dm_pm_cback:disable sniff for rmt lmp ver:%d",p_dev_rec->lmp_version);
             bta_dm_pm_set_sniff_policy(p_dev, (status == BTA_SYS_SCO_OPEN));
         }
     }
@@ -193,7 +200,6 @@ static void bta_dm_pm_cback(tBTA_SYS_CONN_STATUS status, UINT8 id, UINT8 app_id,
     if(i> p_bta_dm_pm_cfg[0].app_id)
         return;
 
-    bta_dm_pm_stop_timer(peer_addr);
     /*p_dev = bta_dm_find_peer_device(peer_addr);*/
 
 #if (BTM_SSR_INCLUDED == TRUE)
@@ -232,6 +238,9 @@ static void bta_dm_pm_cback(tBTA_SYS_CONN_STATUS status, UINT8 id, UINT8 app_id,
         {
             bta_dm_conn_srvcs.count--;
 
+            APPL_TRACE_DEBUG("Removed power mode entry for service id = %d, count = %d",
+                               p_bta_dm_pm_cfg[i].id, bta_dm_conn_srvcs.count);
+
             for(; j<bta_dm_conn_srvcs.count ; j++)
             {
 
@@ -263,12 +272,18 @@ static void bta_dm_pm_cback(tBTA_SYS_CONN_STATUS status, UINT8 id, UINT8 app_id,
 
         bta_dm_conn_srvcs.count++;
         bta_dm_conn_srvcs.conn_srvc[j].state = status;
+
+        APPL_TRACE_WARNING("new conn_srvc id:%d, app_id:%d count:%d", id, app_id,
+                             bta_dm_conn_srvcs.count);
     }
     else
     {
         /* no service is added or removed. only updating status. */
         bta_dm_conn_srvcs.conn_srvc[j].state = status;
     }
+
+    /* stop timer */
+    bta_dm_pm_stop_timer(peer_addr);
 
     if(p_dev)
     {
@@ -283,30 +298,50 @@ static void bta_dm_pm_cback(tBTA_SYS_CONN_STATUS status, UINT8 id, UINT8 app_id,
 #endif
        )
     {
-        bta_dm_pm_ssr(peer_addr);
+       /* If HID connection open is received and SCO is already active.
+        This will handle the case where HID connects when SCO already active */
+        if ((status == BTA_SYS_CONN_OPEN) && (id == BTA_ID_HH) && bta_dm_pm_is_sco_active())
+        {
+            APPL_TRACE_DEBUG("bta_dm_pm_cback: SCO is Active, disabling SSR on HID link")
+            APPL_TRACE_WARNING("HID Dev address: %02x:%02x:%02x:%02x:%02x:%02x", peer_addr[0],
+                peer_addr[1], peer_addr[2], peer_addr[3], peer_addr[4], peer_addr[5]);
+            BTM_SetSsrParams(peer_addr, 0, 0, 0);
+        }
+        else
+        {
+            bta_dm_pm_ssr(peer_addr);
+        }
+    }
+    else
+    {
+        if( ((NULL != (p = BTM_ReadLocalFeatures ())) && HCI_SNIFF_SUB_RATE_SUPPORTED(p)) &&
+            ((NULL != (p = BTM_ReadRemoteFeatures (peer_addr))) && HCI_SNIFF_SUB_RATE_SUPPORTED(p))
+            && (index == BTA_DM_PM_SSR0) )
+        {
+            if (status == BTA_SYS_SCO_OPEN)
+            {
+                APPL_TRACE_DEBUG("bta_dm_pm_cback: SCO is open, reset SSR to zero");
+                BTM_SetSsrParams (peer_addr, 0,0,0 );
+            }
+            else if (status == BTA_SYS_SCO_CLOSE)
+            {
+                APPL_TRACE_DEBUG("bta_dm_pm_cback: SCO is close, back to old SSR");
+                bta_dm_pm_ssr(peer_addr);
+            }
+        }
+    }
+
+    /* If SCO up/down event is received, then enable/disable SSR on active HID link */
+    if (btm_status == BTM_SUCCESS && (status == BTA_SYS_SCO_OPEN || status == BTA_SYS_SCO_CLOSE))
+    {
+        BOOLEAN bScoActive = (status == BTA_SYS_SCO_OPEN);
+
+        APPL_TRACE_DEBUG("bta_dm_pm_cback: bta_dm_pm_hid_check with bScoActive = %d", bScoActive);
+        bta_dm_pm_hid_check(bScoActive);
     }
 #endif
 
     bta_dm_pm_set_mode(peer_addr, FALSE);
-
-    /* perform the HID link workaround if needed
-    ** 1. If SCO up/down event is received OR
-    ** 2. If HID connection open is received and SCO is already active.
-    **     This will handle the case where HID connects when SCO already active
-    */
-    if ( (btm_status == BTM_SUCCESS) &&
-         ( ((status == BTA_SYS_SCO_OPEN) || (status == BTA_SYS_SCO_CLOSE)) ||
-           ((status == BTA_SYS_CONN_OPEN) && (id == BTA_ID_HH) && bta_dm_pm_is_sco_active()) ) )
-    {
-        BOOLEAN bScoActive;
-        if (status == BTA_SYS_CONN_OPEN)
-            bScoActive = TRUE;
-        else
-            bScoActive = (status == BTA_SYS_SCO_OPEN);
-
-        bta_dm_pm_hid_check(bScoActive);
-    }
-
 }
 
 
@@ -464,8 +499,8 @@ static void bta_dm_pm_set_mode(BD_ADDR peer_addr, BOOLEAN timed_out )
         /* dont initiate SNIFF, if link_policy has it disabled */
         if (p_peer_device->link_policy & HCI_ENABLE_SNIFF_MODE)
         {
-	        p_peer_device->pm_mode_attempted = BTA_DM_PM_SNIFF;
-    	    bta_dm_pm_sniff(p_peer_device, (UINT8)(pm_action & 0x0F) );
+            p_peer_device->pm_mode_attempted = BTA_DM_PM_SNIFF;
+            bta_dm_pm_sniff(p_peer_device, (UINT8)(pm_action & 0x0F) );
         }
         else
         {
@@ -525,20 +560,31 @@ static BOOLEAN bta_dm_pm_sniff(tBTA_DM_PEER_DEVICE *p_peer_dev, UINT8 index)
     tBTM_PM_MODE    mode = BTM_PM_STS_ACTIVE;
     tBTM_PM_PWR_MD  pwr_md;
     tBTM_STATUS     status;
-
+    UINT8* p = NULL;
     BTM_ReadPowerMode(p_peer_dev->peer_bdaddr, &mode);
 
 #if (BTM_SSR_INCLUDED == TRUE)
     APPL_TRACE_DEBUG("bta_dm_pm_sniff cur:%d, idx:%d, info:x%x", mode, index, p_peer_dev->info);
     if (mode != BTM_PM_MD_SNIFF ||
         (HCI_SNIFF_SUB_RATE_SUPPORTED(BTM_ReadLocalFeatures ()) &&
-         HCI_SNIFF_SUB_RATE_SUPPORTED(BTM_ReadRemoteFeatures (p_peer_dev->peer_bdaddr)) &&
-         !(p_peer_dev->info & BTA_DM_DI_USE_SSR)))
+         (((p = BTM_ReadRemoteFeatures(p_peer_dev->peer_bdaddr)) != NULL) &&
+           HCI_SNIFF_SUB_RATE_SUPPORTED(p)) && !(p_peer_dev->info & BTA_DM_DI_USE_SSR)))
 #else
     APPL_TRACE_DEBUG("bta_dm_pm_sniff cur:%d, idx:%d", mode, index);
     if(mode != BTM_PM_MD_SNIFF)
 #endif
     {
+#if (BTM_SSR_INCLUDED == TRUE)
+        /* Dont initiate Sniff if controller has alreay accepted
+         * remote sniff params. This avoid sniff loop issue with
+         * some agrresive headsets who use sniff latencies more than
+         * DUT supported range of Sniff intervals.*/
+        if ((mode == BTM_PM_MD_SNIFF) && (p_peer_dev->info & BTA_DM_DI_ACP_SNIFF))
+        {
+            APPL_TRACE_DEBUG("bta_dm_pm_sniff: already in remote initiate sniff");
+            return TRUE;
+        }
+#endif
         /* if the current mode is not sniff, issue the sniff command.
          * If sniff, but SSR is not used in this link, still issue the command */
         memcpy(&pwr_md, &p_bta_dm_pm_md[index], sizeof (tBTM_PM_PWR_MD));
@@ -613,6 +659,26 @@ static void bta_dm_pm_ssr(BD_ADDR peer_addr)
             {
                 if (bta_hh_read_ssr_param(peer_addr, &p_spec_cur->max_lat, &p_spec_cur->min_rmt_to) == BTA_HH_ERR)
                     continue;
+                APPL_TRACE_WARNING("bta_dm_pm_ssr: Orignal Max Latency = %d, Remote Timeout = %d",
+                    p_spec_cur->max_lat, p_spec_cur->min_rmt_to);
+                if (p_spec_cur->max_lat == BTA_HH_SSR_MAX_LATENCY_ZERO)
+                {
+                    APPL_TRACE_WARNING("bta_dm_pm_ssr: Max latency is 0, not sending"
+                        "SSR command as device is blacklisted");
+                    return;
+                }
+                else if (p_spec_cur->max_lat == BTA_HH_SSR_DISABLE_SSR)
+                {
+                    APPL_TRACE_WARNING("bta_dm_pm_ssr: Need to disable SSR"
+                        "as device is blacklisted");
+                    BTM_SetSsrParams (peer_addr, 0, 0, 0);
+                    return;
+                }
+                else if (p_spec_cur->max_lat > BTA_HH_SSR_MAX_LATENCY_OPTIMAL)
+                {
+                    p_spec_cur->max_lat = BTA_HH_SSR_MAX_LATENCY_OPTIMAL;
+                }
+                APPL_TRACE_WARNING("bta_dm_pm_ssr: New Max Latency = %d", p_spec_cur->max_lat);
             }
 #endif
             if (p_spec_cur->max_lat < p_spec->max_lat ||
@@ -913,7 +979,7 @@ static BOOLEAN bta_dm_pm_is_sco_active ()
 **
 ** Function         bta_dm_pm_hid_check
 **
-** Description      Disables/Enables sniff in link policy based on SCO Up/Down
+** Description      Disables/Enables SSR based on SCO Up/Down
 **
 ** Returns          None
 **
@@ -922,20 +988,36 @@ static BOOLEAN bta_dm_pm_is_sco_active ()
 static void bta_dm_pm_hid_check(BOOLEAN bScoActive)
 {
     int j;
+    BD_ADDR peer_bdaddr;
+    UINT8 *p = NULL;
 
-    /* if HID is active, disable the link policy */
     for(j=0; j<bta_dm_conn_srvcs.count ; j++)
     {
         /* check if an entry already present */
         if(bta_dm_conn_srvcs.conn_srvc[j].id == BTA_ID_HH )
         {
-            APPL_TRACE_DEBUG ("SCO status change(Active: %d), modify HID link policy. state: %d",
-                bScoActive, bta_dm_conn_srvcs.conn_srvc[j].state);
-            bta_dm_pm_set_sniff_policy( bta_dm_find_peer_device(bta_dm_conn_srvcs.conn_srvc[j].peer_bdaddr), bScoActive);
+            bdcpy(peer_bdaddr, bta_dm_conn_srvcs.conn_srvc[j].peer_bdaddr);
 
-            /* if we had disabled link policy, seems like the hid device stop retrying SNIFF after a few tries. force sniff if needed */
-            if (!bScoActive)
-                bta_dm_pm_set_mode(bta_dm_conn_srvcs.conn_srvc[j].peer_bdaddr, FALSE);
+            APPL_TRACE_WARNING("SCO status change(Active: %d), HID state: %d",
+                bScoActive, bta_dm_conn_srvcs.conn_srvc[j].state);
+            APPL_TRACE_WARNING("HID Dev address: %02x:%02x:%02x:%02x:%02x:%02x", peer_bdaddr[0],
+                peer_bdaddr[1], peer_bdaddr[2], peer_bdaddr[3], peer_bdaddr[4], peer_bdaddr[5]);
+
+            if(((NULL != (p = BTM_ReadLocalFeatures ())) && HCI_SNIFF_SUB_RATE_SUPPORTED(p))
+                &&((NULL != (p = BTM_ReadRemoteFeatures (peer_bdaddr)))
+                && HCI_SNIFF_SUB_RATE_SUPPORTED(p)))
+            {
+                if (bScoActive)
+                {
+                    APPL_TRACE_DEBUG("bta_dm_pm_hid_check: SCO_OPEN, disabling SSR");
+                    BTM_SetSsrParams(peer_bdaddr, 0, 0, 0);
+                }
+                else
+                {
+                    APPL_TRACE_DEBUG("bta_dm_pm_hid_check: SCO_CLOSE, enabling SSR");
+                    bta_dm_pm_ssr(peer_bdaddr);
+                }
+            }
         }
     }
 

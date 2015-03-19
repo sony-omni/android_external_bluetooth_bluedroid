@@ -364,6 +364,7 @@ void bta_ag_scb_dealloc(tBTA_AG_SCB *p_scb)
 #if (BTM_WBS_INCLUDED == TRUE)
     bta_sys_stop_timer(&p_scb->cn_timer);
 #endif
+    bta_sys_stop_timer(&p_scb->colli_timer);
 
     /* initialize control block */
     memset(p_scb, 0, sizeof(tBTA_AG_SCB));
@@ -515,6 +516,26 @@ BOOLEAN bta_ag_other_scb_open(tBTA_AG_SCB *p_curr_scb)
 
     /* no other scb found */
     APPL_TRACE_DEBUG("No other ag scb open");
+    return FALSE;
+}
+
+/*******************************************************************************
+**
+** Function         bta_ag_scb_open
+**
+** Description      Check whether given scb is in open state.
+**
+**
+** Returns          TRUE if scb is in open state, FALSE otherwise.
+**
+*******************************************************************************/
+BOOLEAN bta_ag_scb_open(tBTA_AG_SCB *p_curr_scb)
+{
+    if (p_curr_scb && p_curr_scb->in_use && p_curr_scb->state == BTA_AG_OPEN_ST)
+    {
+        return TRUE;
+    }
+
     return FALSE;
 }
 
@@ -785,7 +806,7 @@ static void bta_ag_api_result(tBTA_AG_DATA *p_data)
     {
         if ((p_scb = bta_ag_scb_by_idx(p_data->hdr.layer_specific)) != NULL)
         {
-            APPL_TRACE_DEBUG("bta_ag_api_result: p_scb 0x%08x ", p_scb);
+            APPL_TRACE_IMP("bta_ag_api_result: p_scb 0x%08x ", p_scb);
             bta_ag_sm_execute(p_scb, BTA_AG_API_RESULT_EVT, p_data);
         }
     }
@@ -817,23 +838,21 @@ void bta_ag_sm_execute(tBTA_AG_SCB *p_scb, UINT16 event, tBTA_AG_DATA *p_data)
     tBTA_AG_ST_TBL      state_table;
     UINT8               action;
     int                 i;
-
-#if BTA_AG_DEBUG == TRUE
     UINT16  in_event = event;
     UINT8   in_state = p_scb->state;
 
-    /* Ignore displaying of AT results when not connected (Ignored in state machine) */
     if (in_event != BTA_AG_API_RESULT_EVT || p_scb->state == BTA_AG_OPEN_ST)
     {
-        APPL_TRACE_EVENT("AG evt (hdl 0x%04x): State %d (%s), Event 0x%04x (%s)",
+        #if BTA_AG_DEBUG == TRUE
+            APPL_TRACE_IMP("AG evt (hdl 0x%04x): State %d (%s), Event 0x%04x (%s)",
                            bta_ag_scb_to_idx(p_scb),
                            p_scb->state, bta_ag_state_str(p_scb->state),
                            event, bta_ag_evt_str(event, p_data->api_result.result));
-    }
-#else
-    APPL_TRACE_EVENT("AG evt (hdl 0x%04x): State %d, Event 0x%04x",
+        #else
+           APPL_TRACE_IMP("AG evt (hdl 0x%04x): State %d, Event 0x%04x",
                       bta_ag_scb_to_idx(p_scb), p_scb->state, event);
-#endif
+        #endif
+    }
 
     event &= 0x00FF;
     if (event >= (BTA_AG_MAX_EVT & 0x00FF))
@@ -860,15 +879,18 @@ void bta_ag_sm_execute(tBTA_AG_SCB *p_scb, UINT16 event, tBTA_AG_DATA *p_data)
             break;
         }
     }
-#if BTA_AG_DEBUG == TRUE
     if (p_scb->state != in_state)
     {
-        APPL_TRACE_EVENT("BTA AG State Change: [%s] -> [%s] after Event [%s]",
+        #if BTA_AG_DEBUG == TRUE
+            APPL_TRACE_IMP("BTA AG State Change: [%s] -> [%s] after Event [%s]",
                       bta_ag_state_str(in_state),
                       bta_ag_state_str(p_scb->state),
                       bta_ag_evt_str(in_event, p_data->api_result.result));
+        #else
+            APPL_TRACE_IMP("BTA AG State Change: [%d] -> [%d]",
+                              in_state, p_scb->state);
+        #endif
     }
-#endif
 }
 
 /*******************************************************************************
@@ -912,7 +934,7 @@ BOOLEAN bta_ag_hdl_event(BT_HDR *p_msg)
         default:
             if ((p_scb = bta_ag_scb_by_idx(p_msg->layer_specific)) != NULL)
             {
-                APPL_TRACE_DEBUG("bta_ag_hdl_event: p_scb 0x%08x ", p_scb);
+                APPL_TRACE_IMP("bta_ag_hdl_event: p_scb 0x%08x ", p_scb);
                 bta_ag_sm_execute(p_scb, p_msg->event, (tBTA_AG_DATA *) p_msg);
             }
             break;

@@ -26,9 +26,6 @@
  **
  ******************************************************************************/
 
-
-#define ATRACE_TAG ATRACE_TAG_ALWAYS
-
 #include <string.h>
 #include <stdio.h>
 #include <sys/types.h>
@@ -89,10 +86,7 @@ OI_UINT32 contextData[CODEC_DATA_WORDS(2, SBC_CODEC_FAST_FILTER_BUFFERS)];
 OI_INT16 pcmData[15*SBC_MAX_SAMPLES_PER_FRAME*SBC_MAX_CHANNELS];
 #endif
 
-#include <cutils/trace.h>
 #include <cutils/properties.h>
-#define PERF_SYSTRACE med_task_perf_systrace_enabled()
-
 /*****************************************************************************
  **  Constants
  *****************************************************************************/
@@ -408,22 +402,10 @@ static UINT64 time_now_us()
 
 static void log_tstamps_us(char *comment)
 {
-    #define USEC_PER_MSEC 1000L
     static UINT64 prev_us = 0;
     const UINT64 now_us = time_now_us();
-    static UINT64 diff_us = 0;
-
-    diff_us = now_us - prev_us;
-    if ((diff_us / USEC_PER_MSEC) > (BTIF_MEDIA_TIME_TICK + 10))
-    {
-        APPL_TRACE_ERROR("[%s] ts %08llu, diff : %08llu, queue sz %d", comment, now_us, diff_us,
+    APPL_TRACE_DEBUG("[%s] ts %08llu, diff : %08llu, queue sz %d", comment, now_us, now_us - prev_us,
                 btif_media_cb.TxAaQ.count);
-    }
-    else
-    {
-        APPL_TRACE_DEBUG("[%s] ts %08llu, diff : %08llu, queue sz %d", comment, now_us, diff_us,
-                btif_media_cb.TxAaQ.count);
-    }
     prev_us = now_us;
 }
 
@@ -1708,7 +1690,6 @@ static void btif_media_task_handle_inc_media(tBT_SBC_HDR*p_msg)
     }
 #ifdef AVK_BACKPORT
     retwriteAudioTrack = btWriteData((void*)pcmData, (2*sizeof(pcmData) - availPcmBytes));
-    APPL_TRACE_LATENCY_AUDIO("Written to audio, seq number %d", p_msg->layer_specific);
 #else
     UIPC_Send(UIPC_CH_ID_AV_AUDIO, 0, (UINT8 *)pcmData, (2*sizeof(pcmData) - availPcmBytes));
 #endif
@@ -2978,18 +2959,6 @@ BOOLEAN btif_media_aa_read_feeding(tUIPC_CH_ID channel_id)
         APPL_TRACE_WARNING("### UNDERRUN :: ONLY READ %d BYTES OUT OF %d ###",
                 nb_byte_read, read_size);
 
-        if (PERF_SYSTRACE)
-        {
-            char trace_buf[512];
-            snprintf(trace_buf, 32, "A2DP UNDERRUN read %d ", nb_byte_read);
-            ATRACE_BEGIN(trace_buf);
-        }
-
-        if (PERF_SYSTRACE)
-        {
-            ATRACE_END();
-        }
-
         if (nb_byte_read == 0)
             return FALSE;
 
@@ -3218,21 +3187,7 @@ static void btif_media_send_aa_frame(void)
             btif_media_aa_prep_2_send(nb_frame_2_send);
         }
     }
-
-    if (PERF_SYSTRACE)
-    {
-        char trace_buf[1024];
-        snprintf(trace_buf, 32, "btif_media_send_aa_frame:");
-        ATRACE_BEGIN(trace_buf);
-    }
-
     /* send it */
-
-    if (PERF_SYSTRACE)
-    {
-        ATRACE_END();
-    }
-
     VERBOSE("btif_media_send_aa_frame : send %d frames", nb_frame_2_send);
     bta_av_ci_src_data_ready(BTA_AV_CHNL_AUDIO);
 }

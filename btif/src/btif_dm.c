@@ -1022,6 +1022,7 @@ static void btif_dm_pin_req_evt(tBTA_DM_PIN_REQ *p_pin_req)
     UINT32 cod;
     bt_pin_code_t pin_code;
     int dev_type;
+    BOOLEAN secure;
 
     /* Remote properties update */
     if (!btif_get_device_type(p_pin_req->bd_addr, &dev_type))
@@ -1261,7 +1262,7 @@ static void btif_dm_auth_cmpl_evt (tBTA_DM_AUTH_CMPL *p_auth_cmpl)
                 __FUNCTION__, p_auth_cmpl->key_type, pairing_cb.bond_type);
             if(pairing_cb.bond_type == BOND_TYPE_TEMPORARY)
             {
-                BTIF_TRACE_DEBUG1("%s: sending BT_BOND_STATE_NONE for Temp pairing",
+                BTIF_TRACE_DEBUG("%s: sending BT_BOND_STATE_NONE for Temp pairing",
                         __FUNCTION__);
                 bond_state_changed(BT_STATUS_SUCCESS, &bd_addr, BT_BOND_STATE_NONE);
                 return;

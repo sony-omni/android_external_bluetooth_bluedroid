@@ -11,7 +11,9 @@ LOCAL_SRC_FILES:= \
 
 LOCAL_C_INCLUDES += \
 	. \
-	$(LOCAL_PATH)/../utils/include
+	$(LOCAL_PATH)/../utils/include \
+	$(bdroid_C_INCLUDES)
+
 LOCAL_CFLAGS += $(bdroid_CFLAGS)
 
 LOCAL_SHARED_LIBRARIES := \

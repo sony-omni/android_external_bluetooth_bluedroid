@@ -2748,6 +2748,8 @@ static UINT8 check_for_max_number_of_frames_per_packet()
 static void btif_get_num_aa_frame(UINT8 *num_of_iterations, UINT8 *num_of_frames)
 {
     UINT8 result=0;
+    UINT8 nof = 0;
+    UINT8 noi = 1;
 
     switch (btif_media_cb.TxTranscoding)
     {

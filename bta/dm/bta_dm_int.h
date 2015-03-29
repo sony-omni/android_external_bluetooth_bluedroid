@@ -136,6 +136,7 @@ enum
     BTA_DM_API_DISABLE_TEST_MODE_EVT,
     BTA_DM_API_EXECUTE_CBACK_EVT,
     BTA_DM_API_SET_AFH_CHANNEL_ASSESMENT_EVT,
+    BTA_DM_API_HCI_RAW_COMMAND_EVT,
     BTA_DM_MAX_EVT
 };
 
@@ -187,6 +188,16 @@ typedef struct
     UINT8           first;
     UINT8           last;
 } tBTA_DM_API_SET_AFH_CHANNELS_EVT;
+
+/* data type for BTA_DM_API_HCI_RAW_COMMAND_EVT */
+typedef struct
+{
+    BT_HDR              hdr;
+    UINT16              opcode;
+    UINT8               param_len;
+    UINT8               *p_param_buf;
+    tBTA_RAW_CMPL_CBACK *p_cback;
+} tBTA_DM_API_RAW_COMMAND;
 
 /* data type for BTA_DM_API_VENDOR_SPECIFIC_COMMAND_EVT */
 typedef struct
@@ -391,6 +402,7 @@ typedef struct
 #if BLE_INCLUDED == TRUE
     UINT16          handle;
     tBT_TRANSPORT   transport;
+    UINT8  remote_addr_type;
 #endif
 } tBTA_DM_ACL_CHANGE;
 
@@ -430,6 +442,7 @@ typedef struct
     BOOLEAN             dc_known;
     BD_NAME             bd_name;
     UINT8               features[BTA_FEATURE_BYTES_PER_PAGE * (BTA_EXT_FEATURES_PAGE_MAX + 1)];
+    UINT8               pin_len;
 } tBTA_DM_API_ADD_DEVICE;
 
 /* data type for BTA_DM_API_REMOVE_ACL_EVT */
@@ -717,7 +730,7 @@ typedef struct
     BT_HDR                          hdr;
     UINT8                           action;
     tBTA_DM_BLE_PF_FILT_INDEX       filt_index;
-    tBTA_DM_BLE_PF_FILT_PARAMS      *p_filt_params;
+    tBTA_DM_BLE_PF_FILT_PARAMS      filt_params;
     tBLE_BD_ADDR                    *p_target;
     tBTA_DM_BLE_PF_PARAM_CBACK      *p_filt_param_cback;
     tBTA_DM_BLE_REF_VALUE            ref_value;
@@ -827,11 +840,16 @@ typedef union
     tBTA_DM_API_SET_EIR_CONFIG          set_eir_cfg;
 #endif
     tBTA_DM_API_REMOVE_ACL              remove_acl;
+    tBTA_DM_API_RAW_COMMAND btc_command;
 
 } tBTA_DM_MSG;
 
-
+#ifndef MAX_L2CAP_CHANNELS
 #define BTA_DM_NUM_PEER_DEVICE 7
+#else
+#define BTA_DM_NUM_PEER_DEVICE  MAX_L2CAP_CHANNELS
+#endif
+
 
 #define BTA_DM_NOT_CONNECTED  0
 #define BTA_DM_CONNECTED      1
@@ -953,6 +971,8 @@ typedef struct
     BD_ADDR                     pin_bd_addr;
     DEV_CLASS                   pin_dev_class;
     tBTA_DM_SEC_EVT             pin_evt;
+    tBTA_IO_CAP                 loc_io_caps;    /* IO Capabilities of local device */
+    tBTA_AUTH_REQ               rmt_io_caps;    /* IO Capabilities of remote device */
     UINT32          num_val;        /* the numeric value for comparison. If just_works, do not show this number to UI */
     BOOLEAN         just_works;     /* TRUE, if "Just Works" association model */
 #if ( BTM_EIR_SERVER_INCLUDED == TRUE )&&( BTA_EIR_CANNED_UUID_LIST != TRUE )
@@ -966,6 +986,7 @@ typedef struct
 #endif
 
     TIMER_LIST_ENT              switch_delay_timer;
+    BOOLEAN                     secure;
 
 } tBTA_DM_CB;
 
@@ -1261,6 +1282,7 @@ extern void bta_dm_disable_test_mode(tBTA_DM_MSG *p_data);
 extern void bta_dm_execute_callback(tBTA_DM_MSG *p_data);
 
 extern void bta_dm_set_afh_channel_assesment(tBTA_DM_MSG *p_data);
-
+extern void bta_dm_hci_raw_command(tBTA_DM_MSG *p_data);
+extern void bta_dm_gattc_service_search_close(UINT16 event);
 #endif /* BTA_DM_INT_H */
 

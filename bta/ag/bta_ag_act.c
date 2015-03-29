@@ -386,6 +386,8 @@ void bta_ag_rfc_fail(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
     p_scb->role = 0;
     p_scb->svc_conn = FALSE;
     p_scb->hsp_version = HSP_VERSION_1_2;
+    /*Clear the BD address*/
+    bdcpy(p_scb->peer_addr, bd_addr_null);
 
     /* reopen registered servers */
     bta_ag_start_servers(p_scb, p_scb->reg_services);
@@ -560,7 +562,7 @@ void bta_ag_rfc_acp_open(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
     /* set role */
     p_scb->role = BTA_AG_ACP;
 
-    APPL_TRACE_DEBUG ("bta_ag_rfc_acp_open: serv_handle0 = %d serv_handle1 = %d",
+    APPL_TRACE_IMP ("bta_ag_rfc_acp_open: serv_handle0 = %d serv_handle1 = %d",
                        p_scb->serv_handle[0], p_scb->serv_handle[1]);
 
     /* get bd addr of peer */
@@ -617,7 +619,7 @@ void bta_ag_rfc_acp_open(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
         }
     }
 
-    APPL_TRACE_DEBUG ("bta_ag_rfc_acp_open: conn_service = %d conn_handle = %d",
+    APPL_TRACE_IMP ("bta_ag_rfc_acp_open: conn_service = %d conn_handle = %d",
                        p_scb->conn_service, p_scb->conn_handle);
 
     /* close any unopened server */
@@ -651,6 +653,7 @@ void bta_ag_rfc_data(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
 
     memset(buf, 0, BTA_AG_RFC_READ_MAX);
 
+    APPL_TRACE_DEBUG ("bta_ag_rfc_data");
     /* do the following */
     for(;;)
     {
@@ -667,8 +670,17 @@ void bta_ag_rfc_data(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
         }
 
         /* run AT command interpreter on data */
+        bta_sys_busy(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
         bta_ag_at_parse(&p_scb->at_cb, buf, len);
-
+        if ((p_scb->sco_idx != BTM_INVALID_SCO_INDEX) && bta_ag_sco_is_open(p_scb))
+        {
+            APPL_TRACE_IMP ("bta_ag_rfc_data, change link policy for SCO");
+            bta_sys_sco_open(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
+        }
+        else
+        {
+            bta_sys_idle(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
+        }
         /* no more data to read, we're done */
         if (len < BTA_AG_RFC_READ_MAX)
         {
@@ -854,8 +866,19 @@ void bta_ag_ci_rx_data(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
     tBTA_AG_CI_RX_WRITE *p_rx_write_msg = (tBTA_AG_CI_RX_WRITE *)p_data;
     char *p_data_area = (char *)(p_rx_write_msg+1);     /* Point to data area after header */
 
+    APPL_TRACE_DEBUG ("bta_ag_ci_rx_data:");
     /* send to RFCOMM */
+    bta_sys_busy(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
     PORT_WriteData(p_scb->conn_handle, p_data_area, strlen(p_data_area), &len);
+    if ((p_scb->sco_idx != BTM_INVALID_SCO_INDEX) && bta_ag_sco_is_open(p_scb))
+    {
+        APPL_TRACE_IMP ("bta_ag_rfc_data, change link policy for SCO");
+        bta_sys_sco_open(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
+    }
+    else
+    {
+        bta_sys_idle(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
+    }
 }
 
 /*******************************************************************************
@@ -895,6 +918,9 @@ void bta_ag_setcodec(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
 #if (BTM_WBS_INCLUDED == TRUE )
     tBTA_AG_PEER_CODEC codec_type = p_data->api_setcodec.codec;
     tBTA_AG_VAL        val;
+    val.hdr.handle = bta_ag_scb_to_idx(p_scb);
+    val.hdr.app_id = p_scb->app_id;
+    bdcpy(val.bd_addr, p_scb->peer_addr);
 
     /* Check if the requested codec type is valid */
     if((codec_type != BTA_AG_CODEC_NONE) &&

@@ -40,6 +40,18 @@
 #define BTA_HH_SSR_MIN_TOUT_DEF     2
 #endif
 
+#ifndef BTA_HH_SSR_MAX_LATENCY_OPTIMAL
+#define BTA_HH_SSR_MAX_LATENCY_OPTIMAL  360 /* 225 ms*/
+#endif
+
+#ifndef BTA_HH_SSR_MAX_LATENCY_ZERO
+#define BTA_HH_SSR_MAX_LATENCY_ZERO     0
+#endif
+
+#ifndef BTA_HH_SSR_DISABLE_SSR
+#define BTA_HH_SSR_DISABLE_SSR     1
+#endif
+
 /* BTA HID Host callback events */
 #define BTA_HH_ENABLE_EVT       0       /* HH enabled */
 #define BTA_HH_DISABLE_EVT      1       /* HH disabled */
@@ -222,6 +234,7 @@ typedef struct
     BOOLEAN         scps_supported;     /* scan parameter service supported */
 #endif
 
+    INT16           priority;           /* priority                     */
 } tBTA_HH_CONN;
 
 typedef tBTA_HH_CONN tBTA_HH_DEV_INFO;
@@ -504,7 +517,8 @@ BTA_API extern void BTA_HhGetDscpInfo(UINT8 dev_handle);
 *******************************************************************************/
 BTA_API extern void BTA_HhAddDev(BD_ADDR bda, tBTA_HH_ATTR_MASK attr_mask,
                                  UINT8 sub_class, UINT8 app_id,
-                                 tBTA_HH_DEV_DSCP_INFO dscp_info);
+                                 tBTA_HH_DEV_DSCP_INFO dscp_info,
+                                 INT16 priority);
 /*******************************************************************************
 **
 ** Function         BTA_HhRemoveDev

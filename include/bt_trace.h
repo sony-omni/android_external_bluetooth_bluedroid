@@ -27,7 +27,7 @@
 #define BT_TRACE_H
 
 #ifndef BTTRC_INCLUDED
-#define BTTRC_INCLUDED  FALSE
+#define BTTRC_INCLUDED FALSE
 #endif
 #ifndef BTTRC_PARSER_INCLUDED
 #define BTTRC_PARSER_INCLUDED FALSE
@@ -91,6 +91,7 @@
 #define BTTRC_ID_STK_CE                    51
 #define BTTRC_ID_STK_SNEP                  52
 #define BTTRC_ID_STK_NDEF                  53
+#define BTTRC_ID_STK_HIDD                  54
 
 
 /* LayerIDs for BTA */
@@ -132,7 +133,8 @@
 
 /* LayerIDs for BT APP */
 #define BTTRC_ID_BTAPP                     87
-#define BTTRC_ID_BT_PROTOCOL               88         /* this is a temporary solution to allow dynamic
+#define BTTRC_ID_LATENCY_AUDIO             88
+#define BTTRC_ID_BT_PROTOCOL               89         /* this is a temporary solution to allow dynamic
                                                          enable/disable of BT_PROTOCOL_TRACE */
 #define BTTRC_ID_MAX_ID                    BTTRC_ID_BT_PROTOCOL
 // btla-specific --
@@ -554,6 +556,7 @@ EXPORT_API extern void BTTRC_StackTrace6(tBTTRC_LAYER_ID layer_id,
 #define L2CAP_TRACE_API(...)                     {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_API) BT_TRACE(TRACE_LAYER_L2CAP, TRACE_TYPE_API, ##__VA_ARGS__);}
 #define L2CAP_TRACE_EVENT(...)                   {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_EVENT) BT_TRACE(TRACE_LAYER_L2CAP, TRACE_TYPE_EVENT, ##__VA_ARGS__);}
 #define L2CAP_TRACE_DEBUG(...)                   {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_DEBUG) BT_TRACE(TRACE_LAYER_L2CAP, TRACE_TYPE_DEBUG, ##__VA_ARGS__);}
+#define L2CAP_TRACE_VERBOSE(...)                 {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_VERBOSE) BT_TRACE(TRACE_LAYER_L2CAP, TRACE_TYPE_DEBUG, ##__VA_ARGS__);}
 
 /* Define tracing for the SDP unit
 */
@@ -571,6 +574,15 @@ EXPORT_API extern void BTTRC_StackTrace6(tBTTRC_LAYER_ID layer_id,
 #define RFCOMM_TRACE_EVENT(...)                  {if (rfc_cb.trace_level >= BT_TRACE_LEVEL_EVENT) BT_TRACE(TRACE_LAYER_RFCOMM, TRACE_TYPE_EVENT, ##__VA_ARGS__);}
 #define RFCOMM_TRACE_DEBUG(...)                  {if (rfc_cb.trace_level >= BT_TRACE_LEVEL_DEBUG) BT_TRACE(TRACE_LAYER_RFCOMM, TRACE_TYPE_DEBUG, ##__VA_ARGS__);}
 
+/* define traces for L2c sock */
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+#define L2C_SOCK_TRACE_ERROR(...)                  {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_ERROR) BT_TRACE(TRACE_LAYER_L2CAP, TRACE_TYPE_ERROR, ##__VA_ARGS__);}
+#define L2C_SOCK_TRACE_WARNING(...)                {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_WARNING) BT_TRACE(TRACE_LAYER_L2CAP, TRACE_TYPE_WARNING, ##__VA_ARGS__);}
+#define L2C_SOCK_TRACE_API(...)                    {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_API) BT_TRACE(TRACE_LAYER_L2CAP, TRACE_TYPE_API, ##__VA_ARGS__);}
+#define L2C_SOCK_TRACE_EVENT(...)                  {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_EVENT) BT_TRACE(TRACE_LAYER_L2CAP, TRACE_TYPE_EVENT, ##__VA_ARGS__);}
+#define L2C_SOCK_TRACE_DEBUG(...)                  {if (l2cb.l2cap_trace_level >= BT_TRACE_LEVEL_DEBUG) BT_TRACE(TRACE_LAYER_L2CAP, TRACE_TYPE_DEBUG, ##__VA_ARGS__);}
+#endif
+
 /* Generic Access Profile traces */
 #define GAP_TRACE_ERROR(...)                     {if (gap_cb.trace_level >= BT_TRACE_LEVEL_ERROR) BT_TRACE(TRACE_LAYER_GAP, TRACE_TYPE_ERROR, ##__VA_ARGS__);}
 #define GAP_TRACE_EVENT(...)                     {if (gap_cb.trace_level >= BT_TRACE_LEVEL_EVENT) BT_TRACE(TRACE_LAYER_GAP, TRACE_TYPE_EVENT, ##__VA_ARGS__);}
@@ -583,6 +595,15 @@ EXPORT_API extern void BTTRC_StackTrace6(tBTTRC_LAYER_ID layer_id,
 #define HIDH_TRACE_API(...)                       {if (hh_cb.trace_level >= BT_TRACE_LEVEL_API) BT_TRACE(TRACE_LAYER_HID, TRACE_TYPE_API, ##__VA_ARGS__);}
 #define HIDH_TRACE_EVENT(...)                     {if (hh_cb.trace_level >= BT_TRACE_LEVEL_EVENT) BT_TRACE(TRACE_LAYER_HID, TRACE_TYPE_EVENT, ##__VA_ARGS__);}
 #define HIDH_TRACE_DEBUG(...)                     {if (hh_cb.trace_level >= BT_TRACE_LEVEL_DEBUG) BT_TRACE(TRACE_LAYER_HID, TRACE_TYPE_DEBUG, ##__VA_ARGS__);}
+#define HIDH_TRACE_VERBOSE(...)                   {if (hh_cb.trace_level >= BT_TRACE_LEVEL_VERBOSE) BT_TRACE(TRACE_LAYER_HID, TRACE_TYPE_DEBUG, ##__VA_ARGS__);}
+
+/* define traces for HID Device */
+#define HIDD_TRACE_ERROR(...)                     {if (hd_cb.trace_level >= BT_TRACE_LEVEL_ERROR) BT_TRACE(TRACE_LAYER_HID, TRACE_TYPE_ERROR, ##__VA_ARGS__);}
+#define HIDD_TRACE_WARNING(...)                   {if (hd_cb.trace_level >= BT_TRACE_LEVEL_WARNING) BT_TRACE(TRACE_LAYER_HID, TRACE_TYPE_WARNING, ##__VA_ARGS__);}
+#define HIDD_TRACE_API(...)                       {if (hd_cb.trace_level >= BT_TRACE_LEVEL_API) BT_TRACE(TRACE_LAYER_HID, TRACE_TYPE_API, ##__VA_ARGS__);}
+#define HIDD_TRACE_EVENT(...)                     {if (hd_cb.trace_level >= BT_TRACE_LEVEL_EVENT) BT_TRACE(TRACE_LAYER_HID, TRACE_TYPE_EVENT, ##__VA_ARGS__);}
+#define HIDD_TRACE_DEBUG(...)                     {if (hd_cb.trace_level >= BT_TRACE_LEVEL_DEBUG) BT_TRACE(TRACE_LAYER_HID, TRACE_TYPE_DEBUG, ##__VA_ARGS__);}
+#define HIDD_TRACE_VERBOSE(...)                   {if (hd_cb.trace_level >= BT_TRACE_LEVEL_VERBOSE) BT_TRACE(TRACE_LAYER_HID, TRACE_TYPE_DEBUG, ##__VA_ARGS__);}
 
 /* define traces for BNEP */
 
@@ -686,6 +707,7 @@ EXPORT_API extern void BTTRC_StackTrace6(tBTTRC_LAYER_ID layer_id,
 #define L2CAP_TRACE_API(...)
 #define L2CAP_TRACE_EVENT(...)
 #define L2CAP_TRACE_DEBUG(...)
+#define L2CAP_TRACE_VERBOSE(...)
 
 /* Define tracing for the SDP unit
 */
@@ -715,6 +737,15 @@ EXPORT_API extern void BTTRC_StackTrace6(tBTTRC_LAYER_ID layer_id,
 #define HIDH_TRACE_API(...)
 #define HIDH_TRACE_EVENT(...)
 #define HIDH_TRACE_DEBUG(...)
+#define HIDH_TRACE_VERBOSE(...)
+
+/* define traces for HID Device */
+#define HIDD_TRACE_ERROR(...)
+#define HIDD_TRACE_WARNING(...)
+#define HIDD_TRACE_API(...)
+#define HIDD_TRACE_EVENT(...)
+#define HIDD_TRACE_DEBUG(...)
+#define HIDD_TRACE_VERBOSE(...)
 
 /* define traces for BNEP */
 
@@ -793,8 +824,10 @@ EXPORT_API extern void BTTRC_StackTrace6(tBTTRC_LAYER_ID layer_id,
 #if (BT_TRACE_BTIF == TRUE)
 
 extern UINT8 btif_trace_level;
+extern UINT8 audio_latency_trace_level;
 
 /* define traces for application */
+#define BTIF_TRACE_IMP(...)                      {LogMsg(TRACE_CTRL_GENERAL | TRACE_LAYER_NONE | TRACE_ORG_APPL | TRACE_TYPE_DEBUG, ##__VA_ARGS__);}
 #define BTIF_TRACE_ERROR(...)                    {if (btif_trace_level >= BT_TRACE_LEVEL_ERROR) LogMsg(TRACE_CTRL_GENERAL | TRACE_LAYER_NONE | TRACE_ORG_APPL | TRACE_TYPE_ERROR, ##__VA_ARGS__);}
 #define BTIF_TRACE_WARNING(...)                  {if (btif_trace_level >= BT_TRACE_LEVEL_WARNING) LogMsg(TRACE_CTRL_GENERAL | TRACE_LAYER_NONE | TRACE_ORG_APPL | TRACE_TYPE_WARNING, ##__VA_ARGS__);}
 #define BTIF_TRACE_API(...)                      {if (btif_trace_level >= BT_TRACE_LEVEL_API) LogMsg(TRACE_CTRL_GENERAL | TRACE_LAYER_NONE | TRACE_ORG_APPL | TRACE_TYPE_API, ##__VA_ARGS__);}
@@ -805,6 +838,7 @@ extern UINT8 btif_trace_level;
 #else
 /* define traces for Application */
 
+#define BTIF_TRACE_IMP(...)
 #define BTIF_TRACE_ERROR(...)
 #define BTIF_TRACE_WARNING(...)
 #define BTIF_TRACE_API(...)
@@ -818,22 +852,26 @@ extern UINT8 btif_trace_level;
 #if (BT_USE_TRACES == TRUE || BT_TRACE_APPL == TRUE)
 
 /* define traces for application */
+#define APPL_TRACE_IMP(...)                      {LogMsg(TRACE_CTRL_GENERAL | TRACE_LAYER_NONE | TRACE_ORG_APPL | TRACE_TYPE_DEBUG, ##__VA_ARGS__);}
 #define APPL_TRACE_ERROR(...)                    {if (appl_trace_level >= BT_TRACE_LEVEL_ERROR) LogMsg(TRACE_CTRL_GENERAL | TRACE_LAYER_NONE | TRACE_ORG_APPL | TRACE_TYPE_ERROR, ##__VA_ARGS__);}
 #define APPL_TRACE_WARNING(...)                  {if (appl_trace_level >= BT_TRACE_LEVEL_WARNING) LogMsg(TRACE_CTRL_GENERAL | TRACE_LAYER_NONE | TRACE_ORG_APPL | TRACE_TYPE_WARNING, ##__VA_ARGS__);}
 #define APPL_TRACE_API(...)                      {if (appl_trace_level >= BT_TRACE_LEVEL_API) LogMsg(TRACE_CTRL_GENERAL | TRACE_LAYER_NONE | TRACE_ORG_APPL | TRACE_TYPE_API, ##__VA_ARGS__);}
 #define APPL_TRACE_EVENT(...)                    {if (appl_trace_level >= BT_TRACE_LEVEL_EVENT) LogMsg(TRACE_CTRL_GENERAL | TRACE_LAYER_NONE | TRACE_ORG_APPL | TRACE_TYPE_EVENT, ##__VA_ARGS__);}
 #define APPL_TRACE_DEBUG(...)                    {if (appl_trace_level >= BT_TRACE_LEVEL_DEBUG) LogMsg(TRACE_CTRL_GENERAL | TRACE_LAYER_NONE | TRACE_ORG_APPL | TRACE_TYPE_DEBUG, ##__VA_ARGS__);}
 #define APPL_TRACE_VERBOSE(...)                  {if (appl_trace_level >= BT_TRACE_LEVEL_VERBOSE) LogMsg(TRACE_CTRL_GENERAL | TRACE_LAYER_NONE | TRACE_ORG_APPL | TRACE_TYPE_DEBUG, ##__VA_ARGS__);}
+#define APPL_TRACE_LATENCY_AUDIO(...)            {if (audio_latency_trace_level >= BT_TRACE_LEVEL_VERBOSE) LogMsg(TRACE_CTRL_GENERAL | TRACE_LAYER_NONE | TRACE_ORG_APPL | TRACE_TYPE_DEBUG, ##__VA_ARGS__);}
 
 #else
 /* define traces for Application */
 
+#define APPL_TRACE_IMP(...)
 #define APPL_TRACE_ERROR(...)
 #define APPL_TRACE_WARNING(...)
 #define APPL_TRACE_API(...)
 #define APPL_TRACE_EVENT(...)
 #define APPL_TRACE_DEBUG(...)
 #define APPL_TRACE_VERBOSE(...)
+#define APPL_TRACE_LATENCY_AUDIO(...)
 
 #endif
 

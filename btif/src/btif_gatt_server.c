@@ -193,7 +193,9 @@ static void btapp_gatts_handle_cback(uint16_t event, char* p_param)
             bt_bdaddr_t bda;
             bdcpy(bda.address, p_data->conn.remote_bda);
 
+#if (!defined(BTA_SKIP_BLE_START_ENCRYPTION) || BTA_SKIP_BLE_START_ENCRYPTION == FALSE)
             btif_gatt_check_encrypted_link(p_data->conn.remote_bda);
+#endif
 
             HAL_CBACK(bt_gatt_callbacks, server->connection_cb,
                       p_data->conn.conn_id, p_data->conn.server_if, TRUE, &bda);
@@ -403,9 +405,15 @@ static void btgatts_handle_event(uint16_t event, char* p_param)
                     break;
 
                 case BT_DEVICE_TYPE_DUMO:
-                    if ((p_cb->transport == GATT_TRANSPORT_LE) &&
-                        (btif_storage_is_dmt_supported_device(&(p_cb->bd_addr)) == TRUE))
-                        transport = BTA_GATT_TRANSPORT_LE;
+                    if (p_cb->transport == GATT_TRANSPORT_LE)
+                    {
+#if (!defined(BTA_DMT_SPT_FLAG_DISABLE) || (BTA_DMT_SPT_FLAG_DISABLE == FALSE))
+                        if (btif_storage_is_dmt_supported_device(&(p_cb->bd_addr)) == FALSE)
+                            transport = BTA_GATT_TRANSPORT_BR_EDR;
+                        else
+#endif
+                          transport = BTA_GATT_TRANSPORT_LE;
+                    }
                     else
                         transport = BTA_GATT_TRANSPORT_BR_EDR;
                     break;

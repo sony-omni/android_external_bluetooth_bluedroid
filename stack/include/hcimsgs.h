@@ -502,6 +502,36 @@ HCI_API extern BOOLEAN btsnd_hcic_write_simp_pair_debug_mode(UINT8 debug_mode);
 
 #define HCIC_WRITE_SP_DBUG_MODE_OFF     0
 
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+/**** Secure connection Commands ****/
+HCI_API extern BOOLEAN btsnd_hcic_write_sec_conn_host_support(UINT8 mode);
+#define HCIC_PARAM_SIZE_W_SECURE_CONN     1
+
+HCI_API extern BOOLEAN btsnd_hcic_read_sec_conn_host_support(void);
+#define HCIC_PARAM_SIZE_R_SECURE_CONN     0
+
+HCI_API extern BOOLEAN btsnd_hcic_write_sec_conn_test_mode(UINT16 handle,
+                                        UINT8 dm1_mode, UINT8 esco_mode);
+
+#define HCIC_PARAM_SIZE_SEC_CONN_TEST     4
+
+HCI_API extern BOOLEAN btsnd_hcic_write_auth_payload_tout(UINT16 handle, UINT16 tout);
+#define HCIC_PARAM_SIZE_W_AUTH_PAYLOAD_TOUT   4
+
+HCI_API extern BOOLEAN btsnd_hcic_read_auth_payload_tout(UINT16 handle);
+
+#define HCIC_PARAM_SIZE_R_AUTH_PAYLOAD_TOUT   2
+
+HCI_API extern BOOLEAN btsnd_hcic_read_local_oob_extended_data (void);
+
+#define HCIC_PARAM_SIZE_R_LOCAL_OOB_EXTENDED   0
+
+HCI_API extern BOOLEAN btsnd_hcic_rem_oob_extended_reply (BD_ADDR bd_addr, UINT8 *p_c, UINT8 *p_r,
+                                                UINT8 *p_c_256, UINT8 *p_r_256);
+
+#define HCIC_PARAM_SIZE_REM_OOB_EXTENDED_REPLY 70
+
+#endif
                                                                     /* IO Capabilities Response */
 HCI_API extern BOOLEAN btsnd_hcic_io_cap_req_reply (BD_ADDR bd_addr, UINT8 capability,
                                                UINT8 oob_present, UINT8 auth_req);
@@ -922,6 +952,8 @@ HCI_API extern void btsnd_hcic_data (BT_HDR *p_buf, UINT16 len, UINT16 handle, U
                                                                 /*  Send HCI Data */
 
 #define HCID_GET_SCO_LEN(p)  (*((UINT8 *)((p) + 1) + p->offset + 2))
+HCI_API extern void btsnd_hcic_raw_cmd (void *buffer, UINT16 opcode, UINT8 len,
+                                 UINT8 *p_data, void *p_cmd_cplt_cback);
 
 HCI_API extern void btsnd_hcic_vendor_spec_cmd (
                                                 void *buffer, UINT16 opcode,

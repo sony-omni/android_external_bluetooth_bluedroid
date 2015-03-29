@@ -29,7 +29,6 @@
 #include <hardware/bt_sock.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <stdlib.h>
 #include <errno.h>
 
 #define LOG_TAG "BTIF_SOCK_SDP"
@@ -57,6 +56,14 @@
 
 #define RESERVED_SCN_PBS 19
 #define RESERVED_SCN_OPS 12
+#define RESERVED_SCN_SAP 15
+#define RESERVED_SCN_DUN 25
+
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+#define RESERVED_PSM_OPS 5255
+#define RESERVED_PSM_FTP 5257
+int ops_sdp_handle = 0;
+#endif
 
 #define UUID_MAX_LENGTH 16
 
@@ -119,7 +126,84 @@ static int add_sdp_by_uuid(const char *name,  const uint8_t *service_uuid, UINT1
     return 0;
 }
 
+#define BTA_FTP_DEFAULT_VERSION 0x0101  /* for FTP version 1.1 */
+static int add_ftp_sdp(const char* p_service_name, int scn)
+{
+    tSDP_PROTOCOL_ELEM  protoList [3];
+    UINT16              ftp_service = UUID_SERVCLASS_OBEX_FILE_TRANSFER ;
+    UINT16              browse = UUID_SERVCLASS_PUBLIC_BROWSE_GROUP;
+    BOOLEAN             status = FALSE;
+    UINT32              sdp_handle = 0;
+    int ftppsm = 0x1489;
 
+    APPL_TRACE_DEBUG("scn %d, service name %s", scn, p_service_name);
+
+    sdp_handle = SDP_CreateRecord();
+    if (sdp_handle == 0)
+    {
+        APPL_TRACE_ERROR("FTP SERVER SDP: Unable to register FTP SERVER Service");
+        return sdp_handle;
+    }
+
+    /* add service class */
+    if (SDP_AddServiceClassIdList(sdp_handle, 1, &ftp_service))
+    {
+        memset( protoList, 0 , 3*sizeof(tSDP_PROTOCOL_ELEM) );
+        /* add protocol list, including RFCOMM scn */
+        protoList[0].protocol_uuid = UUID_PROTOCOL_L2CAP;
+        protoList[0].num_params = 0;
+        protoList[1].protocol_uuid = UUID_PROTOCOL_RFCOMM;
+        protoList[1].num_params = 1;
+        protoList[1].params[0] = scn;
+        protoList[2].protocol_uuid = UUID_PROTOCOL_OBEX;
+        protoList[2].num_params = 0;
+
+        if (SDP_AddProtocolList(sdp_handle, 3, protoList))
+        {
+            status = TRUE;  /* All mandatory fields were successful */
+
+            /* optional:  if name is not "", add a name entry */
+            if (*p_service_name != '\0')
+                SDP_AddAttribute(sdp_handle,
+                                 (UINT16)ATTR_ID_SERVICE_NAME,
+                                 (UINT8)TEXT_STR_DESC_TYPE,
+                                 (UINT32)(strlen(p_service_name) + 1),
+                                 (UINT8 *)p_service_name);
+
+            /* Add in the Bluetooth Profile Descriptor List */
+            SDP_AddProfileDescriptorList(sdp_handle,
+                                             UUID_SERVCLASS_OBEX_FILE_TRANSFER,
+                                             BTA_FTP_DEFAULT_VERSION);
+
+        } /* end of setting mandatory protocol list */
+    } /* end of setting mandatory service class */
+
+    /* Add other attributes*/
+    if (status)
+    {
+
+          //NOT REQUIRED: ATTR_ID_OBX_OVR_L2CAP_PSM ?
+         /* SDP_AddAttribute(sdp_handle, ATTR_ID_OBX_OVR_L2CAP_PSM , UINT_DESC_TYPE,
+                  (UINT32)1, (UINT8*)&ftppsm);*/
+
+        /* Make the service browseable */
+        SDP_AddUuidSequence (sdp_handle, ATTR_ID_BROWSE_GROUP_LIST, 1, &browse);
+    }
+
+    if (!status)
+    {
+        SDP_DeleteRecord(sdp_handle);
+        sdp_handle = 0;
+        APPL_TRACE_ERROR("bta_ftp_sdp_register FAILED");
+    }
+    else
+    {
+        bta_sys_add_uuid(ftp_service);  /* UUID_SERVCLASS_OBE_FILE_TRANSFER */
+        APPL_TRACE_DEBUG("FTP:  SDP Registered (handle 0x%08x)", sdp_handle);
+    }
+
+    return sdp_handle;
+}
 /* Realm Character Set */
 #define BTA_PBS_REALM_CHARSET   0       /* ASCII */
 
@@ -131,7 +215,7 @@ const tBTA_PBS_CFG bta_pbs_cfg =
     BTA_PBS_REALM_CHARSET,      /* Server only */
     BTA_PBS_USERID_REQ,         /* Server only */
     (BTA_PBS_SUPF_DOWNLOAD | BTA_PBS_SURF_BROWSE),
-    BTA_PBS_REPOSIT_LOCAL,
+    (BTA_PBS_REPOSIT_LOCAL | BTA_PBS_REPOSIT_SIM),
 };
 
 static int add_pbap_sdp(const char* p_service_name, int scn)
@@ -214,6 +298,10 @@ static int add_pbap_sdp(const char* p_service_name, int scn)
  * a channel number to a hard coded SDP entry.
  * TODO: expose a prober SDP API, to avoid hacks like this, and make it possible
  *        to set useful names for the ServiceName */
+#define BTA_MAP_MSG_TYPE_EMAIL    0x01
+#define BTA_MAP_MSG_TYPE_SMS_GSM  0x02
+#define BTA_MAP_MSG_TYPE_SMS_CDMA 0x04
+#define BTA_MAP_MSG_TYPE_MMS      0x08
 
 #define BTA_MAPS_DEFAULT_VERSION 0x0101 /* MAP 1.1 */
 typedef struct
@@ -222,7 +310,18 @@ typedef struct
     const char* service_name;          /* Description of the MAS instance */
     UINT8       supported_message_types;/* Server supported message types - SMS/MMS/EMAIL */
 } tBTA_MAPS_CFG;
-
+const tBTA_MAPS_CFG bta_maps_cfg_sms_mms =
+{
+    0,                  /* Mas id 0 is for SMS/MMS */
+    "MAP SMS/MMS",
+    BTA_MAP_MSG_TYPE_SMS_GSM | BTA_MAP_MSG_TYPE_SMS_CDMA | BTA_MAP_MSG_TYPE_MMS
+};
+const tBTA_MAPS_CFG bta_maps_cfg_email =
+{
+    1,                  /* Mas id 1 is for EMAIL */
+    "MAP EMAIL",
+    BTA_MAP_MSG_TYPE_EMAIL
+};
 static int add_maps_sdp(const char* p_service_name, int scn)
 {
 
@@ -231,31 +330,18 @@ static int add_maps_sdp(const char* p_service_name, int scn)
     UINT16              browse = UUID_SERVCLASS_PUBLIC_BROWSE_GROUP;
     BOOLEAN             status = FALSE;
     UINT32              sdp_handle = 0;
-    char                map_handle_buf[3];
-    char                map_type_buf[3];
-    char                *map_name = (char*)&(p_service_name[4]);
-    tBTA_MAPS_CFG       bta_maps_cfg;
-    tBTA_MAPS_CFG       *p_bta_maps_cfg;
-    APPL_TRACE_DEBUG("add_maps_sdp: scn %d, service name %s", scn, p_service_name);
+    // TODO: To add support for EMAIL set below depending on the scn to either SMS or Email
+    const tBTA_MAPS_CFG *p_bta_maps_cfg = &bta_maps_cfg_sms_mms;
 
-    /* Service name for map is build as XX|YY|name where XX and YY is
-     * MasId and Type flag as 2byte hex as string */
-    map_handle_buf[0] = p_service_name[0];
-    map_handle_buf[1] = p_service_name[1];
-    map_handle_buf[2] = '\0';
+    if (!strncmp(p_service_name, "SMS/MMS Message Access", strlen("SMS/MMS Message Access"))) {
+        p_bta_maps_cfg = &bta_maps_cfg_sms_mms;
+        //APPL_TRACE_DEBUG1("add_maps_sdp for: %s", p_service_name);
+    } else if (!strncmp(p_service_name, "Email Message Access", strlen("Email Message Access"))) {
+        p_bta_maps_cfg = &bta_maps_cfg_email;
+        //APPL_TRACE_DEBUG1("add_maps_sdp for: %s", p_service_name);
+    }
 
-    map_type_buf[0]   = p_service_name[2];
-    map_type_buf[1]   = p_service_name[3];
-    map_type_buf[2]   = '\0';
-
-    p_bta_maps_cfg = &bta_maps_cfg;
-    p_bta_maps_cfg->mas_id = (UINT16)strtol(&map_handle_buf[0],NULL, 16);
-    p_bta_maps_cfg->supported_message_types = (UINT16)strtol(&map_type_buf[0],NULL, 16);
-    p_bta_maps_cfg->service_name = map_name;
-
-    APPL_TRACE_DEBUG("  service_name: %s, mas-id: %d, flags: 0x%02x",
-            p_bta_maps_cfg->service_name, p_bta_maps_cfg->mas_id,
-            p_bta_maps_cfg->supported_message_types);
+    APPL_TRACE_DEBUG("add_maps_sdd:scn %d, service name %s", scn, p_service_name);
 
     if ((sdp_handle = SDP_CreateRecord()) == 0)
     {
@@ -344,11 +430,12 @@ static const tBTA_OP_FMT bta_ops_obj_fmt[] =
                                          BTA_OP_VNOTE_MASK | BTA_OP_VMSG_MASK | \
                                          BTA_OP_ANY_MASK )
 #endif
-
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+static int add_ops_sdp(const char *p_service_name,int scn, int psm)
+#else
 static int add_ops_sdp(const char *p_service_name,int scn)
+#endif
 {
-
-
     tSDP_PROTOCOL_ELEM  protoList [BTA_OPS_PROTOCOL_COUNT];
     UINT16      servclass = UUID_SERVCLASS_OBEX_OBJECT_PUSH;
     int         i, j;
@@ -362,7 +449,36 @@ static int add_ops_sdp(const char *p_service_name,int scn)
 
     APPL_TRACE_DEBUG("scn %d, service name %s", scn, p_service_name);
 
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+    /* check if someone already registered */
+    if(ops_sdp_handle)
+    {
+        APPL_TRACE_DEBUG("scn %d, psm %d service name %s ops_sdp_handle %d", scn,
+                                            psm, p_service_name, ops_sdp_handle);
+        if(psm > 0)
+        {
+            /* rfcomm is already registed */
+            /* delete the protocol desc list add new one with
+               l2cap */
+            if( SDP_DeleteAttribute(ops_sdp_handle, ATTR_ID_BT_PROFILE_DESC_LIST))
+            {
+                if( SDP_AddProfileDescriptorList(ops_sdp_handle,
+                    UUID_SERVCLASS_OBEX_OBJECT_PUSH, 0x0102))
+                {
+                    /* swap the bytes of PSM as SDP is expecting the BIG endian */
+                    psm = 0x8714;
+                    SDP_AddAttribute(ops_sdp_handle, ATTR_ID_OBX_OVR_L2CAP_PSM ,
+                           UINT_DESC_TYPE, (UINT32)2, (UINT8*)&psm);
+                }
+            }
+        }
+        return ops_sdp_handle;
+    }
+
+    ops_sdp_handle = sdp_handle = SDP_CreateRecord();
+#else
     sdp_handle = SDP_CreateRecord();
+#endif
 
     /* add service class */
     if (SDP_AddServiceClassIdList(sdp_handle, 1, &servclass))
@@ -383,10 +499,25 @@ static int add_ops_sdp(const char *p_service_name,int scn)
                 (UINT8)TEXT_STR_DESC_TYPE,
                 (UINT32)(strlen(p_service_name) + 1),
                 (UINT8 *)p_service_name);
-
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+            if( psm > 0)
+            {
+                SDP_AddProfileDescriptorList(sdp_handle,
+                    UUID_SERVCLASS_OBEX_OBJECT_PUSH,
+                    0x0102);
+            }
+            else if(scn > 0)
+            {
+                SDP_AddProfileDescriptorList(sdp_handle,
+                    UUID_SERVCLASS_OBEX_OBJECT_PUSH,
+                    0x0100);
+            }
+#else
             SDP_AddProfileDescriptorList(sdp_handle,
                 UUID_SERVCLASS_OBEX_OBJECT_PUSH,
                 0x0100);
+
+#endif
         }
     }
 
@@ -407,6 +538,16 @@ static int add_ops_sdp(const char *p_service_name,int scn)
 
     SDP_AddSequence(sdp_handle, (UINT16) ATTR_ID_SUPPORTED_FORMATS_LIST,
         (UINT8) j, desc_type, type_len, type_value);
+
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+    if(psm == RESERVED_PSM_OPS)
+    {
+        /* swap the bytes of PSM as SDP is expecting the BIG endian */
+        psm = 0x8714;
+        SDP_AddAttribute(sdp_handle, ATTR_ID_OBX_OVR_L2CAP_PSM , UINT_DESC_TYPE,
+                (UINT32)2, (UINT8*)&psm);
+    }
+#endif
 
     /* set class of device */
     cod.service = BTM_COD_SERVICE_OBJ_TRANSFER;
@@ -456,6 +597,108 @@ static int add_spp_sdp(const char *service_name, int scn)
     return sdp_handle;
 }
 
+#define BTA_SAP_PROTOCOL_COUNT    2
+#define BTA_SAP_SERV_CLASS_COUNT  2
+
+static int add_sap_sdp(const char *p_service_name, int scn)
+{
+    tSDP_PROTOCOL_ELEM  protoList [BTA_SAP_PROTOCOL_COUNT];
+    UINT16      servclass[BTA_SAP_SERV_CLASS_COUNT];
+    int         i, j;
+    tBTA_UTL_COD cod;
+    UINT16      browse;
+    UINT32 sdp_handle;
+
+    APPL_TRACE_DEBUG ("scn %d, service name %s", scn, p_service_name);
+
+    sdp_handle = SDP_CreateRecord();
+    servclass[0] = UUID_SERVCLASS_SAP;
+    servclass[1] = UUID_SERVCLASS_GENERIC_TELEPHONY;
+
+    /* add service class */
+    if (SDP_AddServiceClassIdList(sdp_handle, BTA_SAP_SERV_CLASS_COUNT, servclass))
+    {
+        /* add protocol list, including RFCOMM scn */
+        protoList[0].protocol_uuid = UUID_PROTOCOL_L2CAP;
+        protoList[0].num_params = 0;
+        protoList[1].protocol_uuid = UUID_PROTOCOL_RFCOMM;
+        protoList[1].num_params = 1;
+        protoList[1].params[0] = scn;
+
+        if (SDP_AddProtocolList(sdp_handle, BTA_SAP_PROTOCOL_COUNT, protoList))
+        {
+            SDP_AddAttribute(sdp_handle,
+               (UINT16)ATTR_ID_SERVICE_NAME,
+                (UINT8)TEXT_STR_DESC_TYPE,
+                (UINT32)(strlen(p_service_name) + 1),
+                (UINT8 *)p_service_name);
+
+            SDP_AddProfileDescriptorList(sdp_handle,
+                UUID_SERVCLASS_SAP,
+                0x0101);
+        }
+    }
+
+    /* Make the service browseable */
+    browse = UUID_SERVCLASS_PUBLIC_BROWSE_GROUP;
+    SDP_AddUuidSequence (sdp_handle, ATTR_ID_BROWSE_GROUP_LIST, 1, &browse);
+
+    bta_sys_add_uuid(servclass[0]); /* UUID_SERVCLASS_SAP */
+
+    return sdp_handle;
+}
+
+#define BTA_DUN_PROTOCOL_COUNT    2
+#define BTA_DUN_SERV_CLASS_COUNT  2
+
+static int add_dun_sdp(const char *p_service_name, int scn)
+{
+    tSDP_PROTOCOL_ELEM  protoList [BTA_DUN_PROTOCOL_COUNT];
+    UINT16      servclass[BTA_DUN_SERV_CLASS_COUNT];
+    int         i, j;
+    tBTA_UTL_COD cod;
+    UINT16      browse;
+    UINT32 sdp_handle;
+
+    APPL_TRACE_DEBUG("scn %d, service name %s", scn, p_service_name);
+
+    sdp_handle = SDP_CreateRecord();
+    servclass[0] = UUID_SERVCLASS_DIALUP_NETWORKING;
+    servclass[1] = UUID_SERVCLASS_GENERIC_NETWORKING;
+
+    /* add service class */
+    if (SDP_AddServiceClassIdList(sdp_handle, BTA_DUN_SERV_CLASS_COUNT, servclass))
+    {
+        /* add protocol list, including RFCOMM scn */
+        protoList[0].protocol_uuid = UUID_PROTOCOL_L2CAP;
+        protoList[0].num_params = 0;
+        protoList[1].protocol_uuid = UUID_PROTOCOL_RFCOMM;
+        protoList[1].num_params = 1;
+        protoList[1].params[0] = scn;
+
+        if (SDP_AddProtocolList(sdp_handle, BTA_DUN_PROTOCOL_COUNT, protoList))
+        {
+            SDP_AddAttribute(sdp_handle,
+               (UINT16)ATTR_ID_SERVICE_NAME,
+                (UINT8)TEXT_STR_DESC_TYPE,
+                (UINT32)(strlen(p_service_name) + 1),
+                (UINT8 *)p_service_name);
+
+            SDP_AddProfileDescriptorList(sdp_handle,
+                UUID_SERVCLASS_DIALUP_NETWORKING,
+                0x0101);
+        }
+    }
+
+    /* Make the service browseable */
+    browse = UUID_SERVCLASS_PUBLIC_BROWSE_GROUP;
+    SDP_AddUuidSequence (sdp_handle, ATTR_ID_BROWSE_GROUP_LIST, 1, &browse);
+
+    bta_sys_add_uuid(servclass[0]); /* UUID_SERVCLASS_DIALUP_NETWORKING */
+
+    return sdp_handle;
+}
+
 
 static int add_rfc_sdp_by_uuid(const char* name, const uint8_t* uuid, int scn)
 {
@@ -482,7 +725,11 @@ static int add_rfc_sdp_by_uuid(const char* name, const uint8_t* uuid, int scn)
     }
     if (IS_UUID(UUID_OBEX_OBJECT_PUSH,uuid))
     {
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+        handle = add_ops_sdp(name,final_scn, 0);
+#else
         handle = add_ops_sdp(name,final_scn);
+#endif
     }
     else if (IS_UUID(UUID_PBAP_PSE,uuid))
     {
@@ -492,9 +739,21 @@ static int add_rfc_sdp_by_uuid(const char* name, const uint8_t* uuid, int scn)
     {
         handle = add_maps_sdp(name, final_scn); //MAP Server is always 19
     }
+    else if (IS_UUID(UUID_FTP, uuid))
+    {
+        handle = add_ftp_sdp(name, final_scn);
+    }
     else if (IS_UUID(UUID_SPP, uuid))
     {
         handle = add_spp_sdp(name, final_scn);
+    }
+    else if (IS_UUID(UUID_SAP, uuid))
+    {
+        handle = add_sap_sdp(name, final_scn);
+    }
+    else if (IS_UUID(UUID_DUN, uuid))
+    {
+        handle = add_dun_sdp(name, final_scn);
     }
     else
     {
@@ -509,8 +768,11 @@ BOOLEAN is_reserved_rfc_channel(int scn)
     {
         case RESERVED_SCN_PBS:
         case RESERVED_SCN_OPS:
+        case RESERVED_SCN_SAP:
+        case RESERVED_SCN_DUN:
             return TRUE;
     }
+
     return FALSE;
 }
 
@@ -525,8 +787,31 @@ int get_reserved_rfc_channel (const uint8_t* uuid)
     {
       return RESERVED_SCN_OPS;
     }
+    else if (IS_UUID(UUID_SAP,uuid))
+    {
+      return RESERVED_SCN_SAP;
+    }
+    else if (IS_UUID(UUID_DUN,uuid))
+    {
+      return RESERVED_SCN_DUN;
+    }
     return -1;
 }
+
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+int get_reserved_l2c_channel (const uint8_t* uuid)
+{
+    if (IS_UUID(UUID_OBEX_OBJECT_PUSH,uuid))
+    {
+      return RESERVED_PSM_OPS;
+    }
+    else if (IS_UUID(UUID_FTP,uuid))
+    {
+      return RESERVED_PSM_FTP;
+    }
+    return -1;
+}
+#endif
 
 int add_rfc_sdp_rec(const char* name, const uint8_t* uuid, int scn)
 {
@@ -541,6 +826,15 @@ int add_rfc_sdp_rec(const char* name, const uint8_t* uuid, int scn)
              case RESERVED_SCN_OPS:
                 uuid = UUID_OBEX_OBJECT_PUSH;
                 break;
+             case RESERVED_SCN_FTP:
+                uuid = UUID_FTP;
+                break;
+             case RESERVED_SCN_SAP:
+                uuid = UUID_SAP;
+                break;
+             case RESERVED_SCN_DUN:
+                uuid = UUID_DUN;
+                break;
             default:
                 uuid = UUID_SPP;
                 break;
@@ -550,10 +844,82 @@ int add_rfc_sdp_rec(const char* name, const uint8_t* uuid, int scn)
     return sdp_handle;
 }
 
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+int add_l2c_sdp_rec(const char* name, const uint8_t* uuid, int psm)
+{
+    int sdp_handle = 0;
+    if(is_uuid_empty(uuid))
+    {
+        switch(psm)
+        {
+            case RESERVED_PSM_FTP:
+                uuid = UUID_FTP;
+                break;
+             case RESERVED_PSM_OPS:
+                uuid = UUID_OBEX_OBJECT_PUSH;
+                break;
+        }
+    }
+
+    if (IS_UUID(UUID_OBEX_OBJECT_PUSH,uuid))
+    {
+        sdp_handle = add_ops_sdp(name, RESERVED_SCN_OPS, psm);
+    }
+    return sdp_handle;
+}
+#endif
+
 void del_rfc_sdp_rec(int handle)
 {
     APPL_TRACE_DEBUG("del_rfc_sdp_rec: handle:0x%x", handle);
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+    if(handle != -1 && handle != 0)
+    {
+        if(handle == ops_sdp_handle)
+        {
+            ops_sdp_handle = 0;
+            BTA_JvDeleteRecord( handle );
+        }
+        else
+            BTA_JvDeleteRecord( handle );
+    }
+#else
     if(handle != -1 && handle != 0)
         BTA_JvDeleteRecord( handle );
+#endif
 }
+
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+void del_l2c_sdp_rec(int handle, const uint8_t* uuid)
+{
+    APPL_TRACE_DEBUG("del_l2c_sdp_rec: handle:0x%x", handle);
+    if(handle != -1 && handle != 0)
+    {
+        if (IS_UUID(UUID_OBEX_OBJECT_PUSH,uuid))
+        {
+            if(ops_sdp_handle == 0)
+            {
+                /* it's already deleted by the rfcomm */
+                /* do nothing */
+            }
+            else if(handle == ops_sdp_handle)
+            {
+                /* don't delete the full record instead delete the attribute
+                   and make the version as 1.1 */
+
+                if( SDP_DeleteAttribute(ops_sdp_handle, ATTR_ID_BT_PROFILE_DESC_LIST))
+                {
+                    if( SDP_AddProfileDescriptorList(ops_sdp_handle,
+                                UUID_SERVCLASS_OBEX_OBJECT_PUSH, 0x0100))
+                    {
+                        SDP_DeleteAttribute(ops_sdp_handle, ATTR_ID_OBX_OVR_L2CAP_PSM);
+                    }
+                }
+            }
+        }
+        else
+            BTA_JvDeleteRecord( handle );
+    }
+}
+#endif
 

@@ -118,7 +118,7 @@ static const UINT8 bta_av_st_init[][BTA_AV_NUM_COLS] =
 /* API_VENDOR_CMD_EVT */    {BTA_AV_IGNORE,         BTA_AV_INIT_ST },
 /* API_VENDOR_RSP_EVT */    {BTA_AV_IGNORE,         BTA_AV_INIT_ST },
 /* API_META_RSP_EVT */      {BTA_AV_RC_FREE_RSP,    BTA_AV_INIT_ST },
-/* API_RC_CLOSE_EVT */      {BTA_AV_IGNORE,         BTA_AV_INIT_ST },
+/* API_RC_CLOSE_EVT */      {BTA_AV_RC_CLOSE,       BTA_AV_INIT_ST },
 /* AVRC_OPEN_EVT */         {BTA_AV_RC_OPENED,      BTA_AV_OPEN_ST },
 /* AVRC_MSG_EVT */          {BTA_AV_RC_FREE_MSG,    BTA_AV_INIT_ST },
 /* AVRC_NONE_EVT */         {BTA_AV_IGNORE,         BTA_AV_INIT_ST },
@@ -489,6 +489,7 @@ static void bta_av_api_sink_enable(tBTA_AV_DATA *p_data)
 
     if(activate_sink)
     {
+        /* Activate Sink */
         AVDT_SINK_Activate();
         if (bta_av_cb.sdp_a2d_snk_handle == 0)
         {
@@ -531,14 +532,15 @@ static void bta_av_api_register(tBTA_AV_DATA *p_data)
     tBTA_AV_CODEC   codec_type;
     tBTA_UTL_COD    cod;
     UINT8           index = 0;
-    char p_avk_service_name[BTA_SERVICE_NAME_LEN+1];
-    BCM_STRNCPY_S(p_avk_service_name, sizeof(p_avk_service_name), BTIF_AVK_SERVICE_NAME, BTA_SERVICE_NAME_LEN);
+    UINT8           xx;
+    UINT16          profile_initialized;
 
     memset(&cs,0,sizeof(tAVDT_CS));
 
     registr.status = BTA_AV_FAIL_RESOURCES;
     registr.app_id = p_data->api_reg.app_id;
     registr.chnl   = (tBTA_AV_CHNL)p_data->hdr.layer_specific;
+    profile_initialized = p_data->api_reg.service_uuid;
     do
     {
         p_scb = bta_av_alloc_scb(registr.chnl);
@@ -587,18 +589,17 @@ static void bta_av_api_register(tBTA_AV_DATA *p_data)
             }
 
             /* Set the Capturing service class bit */
-#if (BTA_AV_SINK_INCLUDED == TRUE)
-            cod.service = BTM_COD_SERVICE_CAPTURING | BTM_COD_SERVICE_RENDERING;
-#else
-            cod.service = BTM_COD_SERVICE_CAPTURING;
-#endif
+            if (profile_initialized == UUID_SERVCLASS_AUDIO_SOURCE)
+                cod.service = BTM_COD_SERVICE_CAPTURING;
+            else if (profile_initialized == UUID_SERVCLASS_AUDIO_SINK)
+                cod.service = BTM_COD_SERVICE_RENDERING;
             utl_set_device_class(&cod, BTA_UTL_SET_COD_SERVICE_CLASS);
         } /* if 1st channel */
 
         /* get stream configuration and create stream */
         /* memset(&cs.cfg,0,sizeof(tAVDT_CFG)); */
         cs.cfg.num_codec = 1;
-        cs.tsep = AVDT_TSEP_SRC;
+
 
         /*
          * memset of cs takes care setting call back pointers to null.
@@ -620,6 +621,7 @@ static void bta_av_api_register(tBTA_AV_DATA *p_data)
 
         p_scb->suspend_sup  = TRUE;
         p_scb->recfg_sup    = TRUE;
+        p_scb->skip_sdp     = FALSE;
 
         cs.p_ctrl_cback  = bta_av_dt_cback[p_scb->hdi];
         if(registr.chnl == BTA_AV_CHNL_AUDIO)
@@ -645,55 +647,59 @@ static void bta_av_api_register(tBTA_AV_DATA *p_data)
             if(bta_av_cb.features & BTA_AV_FEAT_DELAY_RPT)
                 cs.cfg.psc_mask |= AVDT_PSC_DELAY_RPT;
 
-            /* keep the configuration in the stream control block */
-            memcpy(&p_scb->cfg, &cs.cfg, sizeof(tAVDT_CFG));
-            while(index < BTA_AV_MAX_SEPS &&
-                (*bta_av_a2d_cos.init)(&codec_type, cs.cfg.codec_info,
-                &cs.cfg.num_protect, cs.cfg.protect_info, index) == TRUE)
+            if (profile_initialized == UUID_SERVCLASS_AUDIO_SOURCE)
             {
-
-#if (BTA_AV_SINK_INCLUDED == TRUE)
-            if(index == 1)
+                cs.tsep = AVDT_TSEP_SRC;
+                index = 0;
+            }
+            else if (profile_initialized == UUID_SERVCLASS_AUDIO_SINK)
             {
                 cs.tsep = AVDT_TSEP_SNK;
                 cs.p_data_cback = bta_av_stream_data_cback;
+                index = 1;
             }
-                APPL_TRACE_DEBUG(" SEP Type = %d",cs.tsep);
-#endif
+            /* Initialize Handles to zero */
+            for(xx=0; xx<BTA_AV_MAX_SEPS; xx++)
+            {
+                p_scb->seps[xx].av_handle = 0;
+            }
+            /* keep the configuration in the stream control block */
+            memcpy(&p_scb->cfg, &cs.cfg, sizeof(tAVDT_CFG));
+            if ((*bta_av_a2d_cos.init)(&codec_type, cs.cfg.codec_info,
+                &cs.cfg.num_protect, cs.cfg.protect_info, index) == TRUE)
+            {
                 if(AVDT_CreateStream(&p_scb->seps[index].av_handle, &cs) == AVDT_SUCCESS)
                 {
                     p_scb->seps[index].codec_type = codec_type;
-
-#if (BTA_AV_SINK_INCLUDED == TRUE)
                     p_scb->seps[index].tsep = cs.tsep;
                     if(cs.tsep == AVDT_TSEP_SNK)
                         p_scb->seps[index].p_app_data_cback = p_data->api_reg.p_app_data_cback;
                     else
                         p_scb->seps[index].p_app_data_cback = NULL; /* In case of A2DP SOURCE we don't need a callback to handle media packets */
-#endif
 
-                    APPL_TRACE_DEBUG("audio[%d] av_handle: %d codec_type: %d",
-                        index, p_scb->seps[index].av_handle, p_scb->seps[index].codec_type);
-                    index++;
                 }
-                else
-                    break;
             }
 
             if(!bta_av_cb.reg_audio)
             {
-                /* create the SDP records on the 1st audio channel */
-                bta_av_cb.sdp_a2d_handle = SDP_CreateRecord();
-                A2D_AddRecord(UUID_SERVCLASS_AUDIO_SOURCE, p_service_name, NULL,
+                /* Initialize Handles to 0 */
+                bta_av_cb.sdp_a2d_handle = 0;
+                bta_av_cb.sdp_a2d_snk_handle = 0;
+                if (profile_initialized == UUID_SERVCLASS_AUDIO_SOURCE)
+                {
+                    /* create the SDP records on the 1st audio channel */
+                    bta_av_cb.sdp_a2d_handle = SDP_CreateRecord();
+                    A2D_AddRecord(UUID_SERVCLASS_AUDIO_SOURCE, p_service_name, NULL,
                                   A2D_SUPF_PLAYER, bta_av_cb.sdp_a2d_handle);
-                bta_sys_add_uuid(UUID_SERVCLASS_AUDIO_SOURCE);
-
-#if (BTA_AV_SINK_INCLUDED == TRUE)
-                bta_av_cb.sdp_a2d_snk_handle = SDP_CreateRecord();
-                A2D_AddRecord(UUID_SERVCLASS_AUDIO_SINK, p_avk_service_name, NULL,
+                    bta_sys_add_uuid(UUID_SERVCLASS_AUDIO_SOURCE);
+                }
+                else if (profile_initialized == UUID_SERVCLASS_AUDIO_SINK)
+                {
+                    bta_av_cb.sdp_a2d_snk_handle = SDP_CreateRecord();
+                    A2D_AddRecord(UUID_SERVCLASS_AUDIO_SINK, p_service_name, NULL,
                                   A2D_SUPF_PLAYER, bta_av_cb.sdp_a2d_snk_handle);
-                bta_sys_add_uuid(UUID_SERVCLASS_AUDIO_SINK);
-#endif
+                    bta_sys_add_uuid(UUID_SERVCLASS_AUDIO_SINK);
+                }
                 /* start listening when A2DP is registered */
                 if (bta_av_cb.features & BTA_AV_FEAT_RCTG)
                     bta_av_rc_create(&bta_av_cb, AVCT_ACP, 0, BTA_AV_NUM_LINKS + 1);
@@ -913,7 +919,7 @@ void bta_av_restore_switch (void)
 static void bta_av_sys_rs_cback (tBTA_SYS_CONN_STATUS status,UINT8 id, UINT8 app_id, BD_ADDR peer_addr)
 {
     int         i;
-    tBTA_AV_SCB *p_scb;
+    tBTA_AV_SCB *p_scb = NULL;
     tBTA_AV_ROLE_RES  *p_buf;
     UINT8       cur_role;
     UINT8       peer_idx = 0;
@@ -957,7 +963,10 @@ static void bta_av_sys_rs_cback (tBTA_SYS_CONN_STATUS status,UINT8 id, UINT8 app
     /* we need to continue opening process for the BTA_AvOpen().                                    */
     if ((bta_av_cb.rs_idx != 0) && (bta_av_cb.rs_idx != peer_idx))
     {
-        p_scb = bta_av_cb.p_scb[bta_av_cb.rs_idx - 1];
+        if ((bta_av_cb.rs_idx -1) < BTA_AV_NUM_STRS)
+        {
+            p_scb = bta_av_cb.p_scb[bta_av_cb.rs_idx - 1];
+        }
         if (p_scb && p_scb->q_tag == BTA_AV_Q_TAG_OPEN)
         {
             APPL_TRACE_DEBUG ("bta_av_sys_rs_cback: rs_idx(%d), hndl:x%x q_tag: %d",

@@ -6,6 +6,11 @@ ifeq ($(BOARD_HAVE_BLUETOOTH_BCM),true)
 LOCAL_CFLAGS += \
 	-DBOARD_HAVE_BLUETOOTH_BCM
 endif
+
+ifeq ($(BOARD_HAS_QCA_BT_ROME),true)
+  LOCAL_CFLAGS += -DNO_HCI_RESET_FROM_BDROID
+endif
+
 LOCAL_CFLAGS += -DBUILDCFG $(bdroid_CFLAGS) -std=c99
 
 LOCAL_PRELINK_MODULE:=false
@@ -51,6 +56,9 @@ LOCAL_SRC_FILES:= \
     ./hh/bta_hh_le.c \
     ./hh/bta_hh_utils.c \
     ./hh/bta_hh_main.c \
+    ./hd/bta_hd_act.c \
+    ./hd/bta_hd_api.c \
+    ./hd/bta_hd_main.c \
     ./pb/bta_pbs_cfg.c \
     ./fs/bta_fs_ci.c \
     ./fs/bta_fs_cfg.c \

@@ -40,7 +40,7 @@
 static void bta_gattc_char_dscpt_disc_cmpl(UINT16 conn_id, tBTA_GATTC_SERV *p_srvc_cb);
 static tBTA_GATT_STATUS bta_gattc_sdp_service_disc(UINT16 conn_id, tBTA_GATTC_SERV *p_server_cb);
 
-#define BTA_GATT_SDP_DB_SIZE 750
+#define BTA_GATT_SDP_DB_SIZE 3750
 
 /*****************************************************************************
 **  Constants
@@ -330,8 +330,16 @@ static tBTA_GATT_STATUS bta_gattc_add_srvc_to_cache(tBTA_GATTC_SERV *p_srvc_cb,
         p_srvc_cb->p_srvc_cache = p_new_srvc;
 
     /* update buffer managament info */
-    p_srvc_cb->p_free += sizeof(tBTA_GATTC_CACHE);
-    p_srvc_cb->free_byte -= sizeof(tBTA_GATTC_CACHE);
+    if(p_srvc_cb->free_byte > sizeof(tBTA_GATTC_CACHE))
+    {
+        p_srvc_cb->p_free += sizeof(tBTA_GATTC_CACHE);
+        p_srvc_cb->free_byte -= sizeof(tBTA_GATTC_CACHE);
+    }
+    else
+    {
+        p_srvc_cb->free_byte = 0;
+    }
+
 
 
     return status;
@@ -405,8 +413,16 @@ static tBTA_GATT_STATUS bta_gattc_add_attr_to_cache(tBTA_GATTC_SERV *p_srvc_cb,
         p_attr->inst_id = 0;
 
     /* update service information */
-    p_srvc_cb->p_free += len;
-    p_srvc_cb->free_byte -= len;
+    if(p_srvc_cb->free_byte > len)
+    {
+        p_srvc_cb->p_free += len;
+        p_srvc_cb->free_byte -= len;
+    }
+    else
+    {
+        p_srvc_cb->free_byte = 0;
+    }
+
 
     /* first attribute within the service, update the attribute pointer */
     if (p_srvc_cb->p_cur_srvc->p_attr == NULL)
@@ -670,18 +686,20 @@ static void bta_gattc_char_dscpt_disc_cmpl(UINT16 conn_id, tBTA_GATTC_SERV *p_sr
 {
     tBTA_GATTC_ATTR_REC *p_rec = NULL;
 
-    if (-- p_srvc_cb->total_char > 0)
+    if((p_srvc_cb->total_char != 0) && (-- p_srvc_cb->total_char > 0))
     {
         p_rec = p_srvc_cb->p_srvc_list + (++ p_srvc_cb->cur_char_idx);
         /* add the next characteristic into cache */
-        bta_gattc_add_attr_to_cache (p_srvc_cb,
+        if(p_rec != NULL)  {
+           bta_gattc_add_attr_to_cache (p_srvc_cb,
                                      p_rec->s_handle,
                                      &p_rec->uuid,
                                      p_rec->property,
                                      BTA_GATTC_ATTR_TYPE_CHAR);
 
-        /* start discoverying next characteristic for char descriptor */
-        bta_gattc_start_disc_char_dscp(conn_id, p_srvc_cb);
+           /* start discoverying next characteristic for char descriptor */
+           bta_gattc_start_disc_char_dscp(conn_id, p_srvc_cb);
+        }
     }
     else
     /* all characteristic has been explored, start with next service if any */

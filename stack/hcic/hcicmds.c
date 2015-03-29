@@ -2319,6 +2319,168 @@ void btsnd_hcic_write_ext_inquiry_response (void *buffer, UINT8 fec_req)
 }
 #endif  /* BTM_EIR_SERVER_INCLUDED == TRUE */
 
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+
+BOOLEAN btsnd_hcic_write_sec_conn_host_support(UINT8 mode)
+{
+    BT_HDR *p;
+    UINT8 *pp;
+
+    if ((p = HCI_GET_CMD_BUF(HCIC_PARAM_SIZE_W_SECURE_CONN)) == NULL)
+        return (FALSE);
+
+    pp = (UINT8 *)(p + 1);
+
+    p->len    = HCIC_PREAMBLE_SIZE + HCIC_PARAM_SIZE_W_SECURE_CONN;
+    p->offset = 0;
+
+    UINT16_TO_STREAM (pp, HCI_WRITE_SECURE_CONN_HOST_SUPPORT);
+    UINT8_TO_STREAM  (pp, HCIC_PARAM_SIZE_W_SECURE_CONN);
+
+    UINT8_TO_STREAM (pp, mode);
+
+    btu_hcif_send_cmd (LOCAL_BR_EDR_CONTROLLER_ID,  p);
+    return (TRUE);
+}
+
+BOOLEAN btsnd_hcic_read_sec_conn_host_support(void)
+{
+    BT_HDR *p;
+    UINT8 *pp;
+
+    if ((p = HCI_GET_CMD_BUF(HCIC_PARAM_SIZE_R_SECURE_CONN)) == NULL)
+        return (FALSE);
+
+    pp = (UINT8 *)(p + 1);
+
+    p->len    = HCIC_PREAMBLE_SIZE + HCIC_PARAM_SIZE_R_SECURE_CONN;
+    p->offset = 0;
+
+    UINT16_TO_STREAM (pp, HCI_READ_SECURE_CONN_HOST_SUPPORT);
+    UINT8_TO_STREAM  (pp, HCIC_PARAM_SIZE_R_SECURE_CONN);
+
+    btu_hcif_send_cmd (LOCAL_BR_EDR_CONTROLLER_ID,  p);
+    return (TRUE);
+}
+
+
+BOOLEAN btsnd_hcic_write_sec_conn_test_mode(UINT16 handle, UINT8 dm1_mode, UINT8 esco_mode)
+{
+    BT_HDR *p;
+    UINT8 *pp;
+
+    if ((p = HCI_GET_CMD_BUF(HCIC_PARAM_SIZE_SEC_CONN_TEST)) == NULL)
+        return (FALSE);
+
+    pp = (UINT8 *)(p + 1);
+
+    p->len    = HCIC_PREAMBLE_SIZE + HCIC_PARAM_SIZE_SEC_CONN_TEST;
+    p->offset = 0;
+
+    UINT16_TO_STREAM (pp, HCI_WRITE_SEC_CONN_TEST_MODE);
+    UINT8_TO_STREAM  (pp, HCIC_PARAM_SIZE_SEC_CONN_TEST);
+
+    UINT16_TO_STREAM (pp, handle);
+    UINT8_TO_STREAM (pp, dm1_mode);
+    UINT8_TO_STREAM (pp, esco_mode);
+
+    btu_hcif_send_cmd (LOCAL_BR_EDR_CONTROLLER_ID,  p);
+    return (TRUE);
+}
+
+BOOLEAN btsnd_hcic_write_auth_payload_tout(UINT16 handle, UINT16 tout)
+{
+    BT_HDR *p;
+    UINT8 *pp;
+
+    if ((p = HCI_GET_CMD_BUF(HCIC_PARAM_SIZE_W_AUTH_PAYLOAD_TOUT)) == NULL)
+        return (FALSE);
+
+    pp = (UINT8 *)(p + 1);
+
+    p->len    = HCIC_PREAMBLE_SIZE + HCIC_PARAM_SIZE_W_AUTH_PAYLOAD_TOUT;
+    p->offset = 0;
+
+    UINT16_TO_STREAM (pp, HCI_WRITE_AUTH_PAYLOAD_TOUT);
+    UINT8_TO_STREAM  (pp, HCIC_PARAM_SIZE_W_AUTH_PAYLOAD_TOUT);
+
+    UINT16_TO_STREAM (pp, handle);
+    UINT16_TO_STREAM (pp, tout);
+
+    btu_hcif_send_cmd (LOCAL_BR_EDR_CONTROLLER_ID,  p);
+    return (TRUE);
+}
+
+BOOLEAN btsnd_hcic_read_auth_payload_tout(UINT16 handle)
+{
+    BT_HDR *p;
+    UINT8 *pp;
+
+    if ((p = HCI_GET_CMD_BUF(HCIC_PARAM_SIZE_R_AUTH_PAYLOAD_TOUT)) == NULL)
+        return (FALSE);
+
+    pp = (UINT8 *)(p + 1);
+
+    p->len    = HCIC_PREAMBLE_SIZE + HCIC_PARAM_SIZE_R_AUTH_PAYLOAD_TOUT;
+    p->offset = 0;
+
+    UINT16_TO_STREAM (pp, HCI_READ_AUTH_PAYLOAD_TOUT);
+    UINT8_TO_STREAM  (pp, HCIC_PARAM_SIZE_R_AUTH_PAYLOAD_TOUT);
+
+    UINT16_TO_STREAM (pp, handle);
+
+    btu_hcif_send_cmd (LOCAL_BR_EDR_CONTROLLER_ID,  p);
+    return (TRUE);
+}
+
+BOOLEAN btsnd_hcic_read_local_oob_extended_data (void)
+{
+    BT_HDR *p;
+    UINT8 *pp;
+
+    if ((p = HCI_GET_CMD_BUF(HCIC_PARAM_SIZE_R_LOCAL_OOB_EXTENDED)) == NULL)
+        return (FALSE);
+
+    pp = (UINT8 *)(p + 1);
+
+    p->len    = HCIC_PREAMBLE_SIZE + HCIC_PARAM_SIZE_R_LOCAL_OOB_EXTENDED;
+    p->offset = 0;
+
+    UINT16_TO_STREAM (pp, HCI_READ_LOCAL_OOB_EXTENDED_DATA);
+    UINT8_TO_STREAM  (pp, HCIC_PARAM_SIZE_R_LOCAL_OOB_EXTENDED);
+
+    btu_hcif_send_cmd (LOCAL_BR_EDR_CONTROLLER_ID,  p);
+    return (TRUE);
+}
+
+BOOLEAN btsnd_hcic_rem_oob_extended_reply (BD_ADDR bd_addr, UINT8 *p_c, UINT8 *p_r,
+                                                UINT8 *p_c_256, UINT8 *p_r_256)
+{
+    BT_HDR *p;
+    UINT8 *pp;
+
+    if ((p = HCI_GET_CMD_BUF(HCIC_PARAM_SIZE_REM_OOB_EXTENDED_REPLY)) == NULL)
+        return (FALSE);
+
+    pp = (UINT8 *)(p + 1);
+
+    p->len    = HCIC_PREAMBLE_SIZE + HCIC_PARAM_SIZE_REM_OOB_EXTENDED_REPLY;
+    p->offset = 0;
+
+    UINT16_TO_STREAM (pp, HCI_REM_OOB_EXTENDED_DATA_REQ_REPLY);
+    UINT8_TO_STREAM  (pp, HCIC_PARAM_SIZE_REM_OOB_EXTENDED_REPLY);
+
+    BDADDR_TO_STREAM (pp, bd_addr);
+    ARRAY16_TO_STREAM (pp, p_c);
+    ARRAY16_TO_STREAM (pp, p_r);
+    ARRAY16_TO_STREAM (pp, p_c_256);
+    ARRAY16_TO_STREAM (pp, p_r_256);
+
+    btu_hcif_send_cmd (LOCAL_BR_EDR_CONTROLLER_ID,  p);
+    return (TRUE);
+}
+
+#endif
 /**** Simple Pairing Commands ****/
 BOOLEAN btsnd_hcic_write_simple_pairing_mode (UINT8 mode)
 {
@@ -3306,6 +3468,26 @@ BOOLEAN btsnd_hcic_write_pagescan_type (UINT8 type)
 #if !defined (LMP_TEST) && (HCI_CMD_POOL_BUF_SIZE < 268)
 #error "HCI_CMD_POOL_BUF_SIZE must be larger than 268"
 #endif
+
+
+void btsnd_hcic_raw_cmd (void *buffer, UINT16 opcode, UINT8 len,
+                                 UINT8 *p_data, void *p_cmd_cplt_cback)
+{
+    BT_HDR *p = (BT_HDR *)buffer;
+    UINT8 *pp = (UINT8 *)(p + 1);
+
+    p->len    = HCIC_PREAMBLE_SIZE + len;
+    p->offset = sizeof(void *);
+
+    *((void **)pp) = p_cmd_cplt_cback;  /* Store command complete callback in buffer */
+    pp += sizeof(void *);               /* Skip over callback pointer */
+
+    UINT16_TO_STREAM (pp, opcode);
+    UINT8_TO_STREAM  (pp, len);
+    ARRAY_TO_STREAM  (pp, p_data, len);
+
+    btu_hcif_send_cmd (LOCAL_BR_EDR_CONTROLLER_ID,  p);
+}
 
 void btsnd_hcic_vendor_spec_cmd (void *buffer, UINT16 opcode, UINT8 len,
                                  UINT8 *p_data, void *p_cmd_cplt_cback)

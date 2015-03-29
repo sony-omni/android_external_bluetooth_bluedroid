@@ -48,6 +48,37 @@ static void btm_process_remote_ext_features (tACL_CONN *p_acl_cb, UINT8 num_read
 
 #define BTM_DEV_REPLY_TIMEOUT   3       /* 3 second timeout waiting for responses */
 
+/* Black listed car kits/headsets for role switch */
+static const UINT8 btm_role_switch_black_list_prefix[][3] = {{0x00, 0x0d, 0xfd}, /* MOT EQ5 */
+                                                             {0x00, 0x1b, 0xdc}  /* BSHSBE20 */
+                                                            };
+
+/*******************************************************************************
+**
+** Function         btm_blacklistted_for_role_switch
+**
+** Description      This function is called to find the blacklisted carkits
+**                  for role switch.
+**
+** Returns          TRUE, if black listed
+**
+*******************************************************************************/
+BOOLEAN btm_blacklistted_for_role_switch (BD_ADDR addr)
+{
+    int blacklistsize = 0;
+    int i =0;
+
+    blacklistsize = sizeof(btm_role_switch_black_list_prefix)/sizeof(btm_role_switch_black_list_prefix[0]);
+    for (i=0; i < blacklistsize; i++)
+    {
+        if (0 == memcmp(btm_role_switch_black_list_prefix[i], addr, 3))
+        {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
 /*******************************************************************************
 **
 ** Function         btm_acl_init
@@ -214,7 +245,7 @@ void btm_acl_created (BD_ADDR bda, DEV_CLASS dc, BD_NAME bdn,
     tACL_CONN        *p;
     UINT8             xx;
 
-    BTM_TRACE_DEBUG ("btm_acl_created hci_handle=%d link_role=%d  transport=%d",
+    BTM_TRACE_WARNING ("btm_acl_created hci_handle=%d link_role=%d  transport=%d",
                       hci_handle,link_role, transport);
     /* Ensure we don't have duplicates */
     p = btm_bda_to_acl(bda, transport);
@@ -249,7 +280,15 @@ void btm_acl_created (BD_ADDR bda, DEV_CLASS dc, BD_NAME bdn,
                 if (btm_cb.ble_ctr_cb.privacy)
                 {
                     p->conn_addr_type = btm_cb.ble_ctr_cb.addr_mgnt_cb.own_addr_type;
-                    memcpy(p->conn_addr, btm_cb.ble_ctr_cb.addr_mgnt_cb.private_addr, BD_ADDR_LEN);
+                    //If BLE peripheral and Multi Adv supported
+                    if(p->link_role == HCI_ROLE_SLAVE && (btm_cb.cmn_ble_vsc_cb.adv_inst_max > 0))
+                    {
+                        memcpy(p->conn_addr, btm_cb.ble_ctr_cb.addr_mgnt_cb.multi_adv_bda, BD_ADDR_LEN);
+                    }
+                    else
+                    {
+                        memcpy(p->conn_addr, btm_cb.ble_ctr_cb.addr_mgnt_cb.private_addr, BD_ADDR_LEN);
+                    }
                 }
                 else
 #endif
@@ -279,7 +318,6 @@ void btm_acl_created (BD_ADDR bda, DEV_CLASS dc, BD_NAME bdn,
             /* if BR/EDR do something more */
             if (transport == BT_TRANSPORT_BR_EDR)
             {
-                btsnd_hcic_read_rmt_clk_offset (p->hci_handle);
                 btsnd_hcic_rmt_ver_req (p->hci_handle);
             }
             p_dev_rec = btm_find_dev_by_handle (hci_handle);
@@ -312,6 +350,13 @@ void btm_acl_created (BD_ADDR bda, DEV_CLASS dc, BD_NAME bdn,
                         p_dev_rec->sm4 |= BTM_SM4_KNOWN;
                     }
 
+                    // Retrieve remote name only if not already in progress by security module
+                    if (!(p_dev_rec->sec_state & BTM_SEC_STATE_GETTING_NAME))
+                    {
+                        btsnd_hcic_rmt_name_req (p->remote_addr, HCI_PAGE_SCAN_REP_MODE_R1,
+                            HCI_MANDATARY_PAGE_SCAN_MODE, 0);
+                    }
+
                     btm_establish_continue (p);
                     return;
                 }
@@ -336,11 +381,7 @@ void btm_acl_created (BD_ADDR bda, DEV_CLASS dc, BD_NAME bdn,
                     btm_establish_continue(p);
                 }
             }
-            else
 #endif
-            {
-                btm_read_remote_features (p->hci_handle);
-            }
 
             /* read page 1 - on rmt feature event for buffer reasons */
             return;
@@ -518,7 +559,7 @@ void btm_acl_device_down (void)
 void btm_acl_update_busy_level (tBTM_BLI_EVENT event)
 {
     tBTM_BL_UPDATE_DATA  evt;
-    UINT8 busy_level;
+    UINT8 busy_level = 0;
     BTM_TRACE_DEBUG ("btm_acl_update_busy_level");
     BOOLEAN old_inquiry_state = btm_cb.is_inquiry;
     switch (event)
@@ -526,6 +567,7 @@ void btm_acl_update_busy_level (tBTM_BLI_EVENT event)
         case BTM_BLI_ACL_UP_EVT:
             BTM_TRACE_DEBUG ("BTM_BLI_ACL_UP_EVT");
             btm_cb.num_acl++;
+            busy_level = (UINT8)btm_cb.num_acl;
             break;
         case BTM_BLI_ACL_DOWN_EVT:
             if (btm_cb.num_acl)
@@ -537,38 +579,39 @@ void btm_acl_update_busy_level (tBTM_BLI_EVENT event)
             {
                 BTM_TRACE_ERROR ("BTM_BLI_ACL_DOWN_EVT issued, but num_acl already zero !!!");
             }
+            busy_level = (UINT8)btm_cb.num_acl;
             break;
         case BTM_BLI_PAGE_EVT:
             BTM_TRACE_DEBUG ("BTM_BLI_PAGE_EVT");
             btm_cb.is_paging = TRUE;
             evt.busy_level_flags= BTM_BL_PAGING_STARTED;
+            busy_level = BTM_BL_PAGING_STARTED;
             break;
         case BTM_BLI_PAGE_DONE_EVT:
             BTM_TRACE_DEBUG ("BTM_BLI_PAGE_DONE_EVT");
             btm_cb.is_paging = FALSE;
             evt.busy_level_flags = BTM_BL_PAGING_COMPLETE;
+            busy_level = BTM_BL_PAGING_COMPLETE;
             break;
         case BTM_BLI_INQ_EVT:
             BTM_TRACE_DEBUG ("BTM_BLI_INQ_EVT");
             btm_cb.is_inquiry = TRUE;
             evt.busy_level_flags = BTM_BL_INQUIRY_STARTED;
+            busy_level = BTM_BL_INQUIRY_STARTED;
             break;
         case BTM_BLI_INQ_CANCEL_EVT:
             BTM_TRACE_DEBUG ("BTM_BLI_INQ_CANCEL_EVT");
             btm_cb.is_inquiry = FALSE;
             evt.busy_level_flags = BTM_BL_INQUIRY_CANCELLED;
+            busy_level = BTM_BL_INQUIRY_COMPLETE;
             break;
         case BTM_BLI_INQ_DONE_EVT:
             BTM_TRACE_DEBUG ("BTM_BLI_INQ_DONE_EVT");
             btm_cb.is_inquiry = FALSE;
             evt.busy_level_flags = BTM_BL_INQUIRY_COMPLETE;
+            busy_level = BTM_BL_INQUIRY_COMPLETE;
             break;
     }
-
-    if (btm_cb.is_paging || btm_cb.is_inquiry)
-        busy_level = 10;
-    else
-        busy_level = (UINT8)btm_cb.num_acl;
 
     if ((busy_level != btm_cb.busy_level) ||(old_inquiry_state != btm_cb.is_inquiry))
     {
@@ -607,6 +650,10 @@ tBTM_STATUS BTM_GetRole (BD_ADDR remote_bd_addr, UINT8 *p_role)
 
     /* Get the current role */
     *p_role = p->link_role;
+    BTM_TRACE_WARNING ("BTM: Local device role : 0x%02x", *p_role );
+    BTM_TRACE_WARNING ("BTM: RemBdAddr: %02x%02x%02x%02x%02x%02x",
+                         remote_bd_addr[0], remote_bd_addr[1], remote_bd_addr[2], remote_bd_addr[3],
+                         remote_bd_addr[4], remote_bd_addr[5]);
     return(BTM_SUCCESS);
 }
 
@@ -643,9 +690,6 @@ tBTM_STATUS BTM_SwitchRole (BD_ADDR remote_bd_addr, UINT8 new_role, tBTM_CMPL_CB
 #if (BT_USE_TRACES == TRUE)
     BD_ADDR_PTR  p_bda;
 #endif
-    BTM_TRACE_API ("BTM_SwitchRole BDA: %02x-%02x-%02x-%02x-%02x-%02x",
-                    remote_bd_addr[0], remote_bd_addr[1], remote_bd_addr[2],
-                    remote_bd_addr[3], remote_bd_addr[4], remote_bd_addr[5]);
 
     /* Make sure the local device supports switching */
     if (!(HCI_SWITCH_SUPPORTED(btm_cb.devcb.local_lmp_features[HCI_EXT_FEATURES_PAGE_0])))
@@ -761,6 +805,12 @@ tBTM_STATUS BTM_SwitchRole (BD_ADDR remote_bd_addr, UINT8 new_role, tBTM_CMPL_CB
         btm_cb.devcb.switch_role_ref_data.hci_status = HCI_ERR_UNSUPPORTED_VALUE;
         btm_cb.devcb.p_switch_role_cb = p_cb;
     }
+    BTM_TRACE_WARNING ("BTM_SwitchRole BDA: %02x-%02x-%02x-%02x-%02x-%02x",
+                    remote_bd_addr[0], remote_bd_addr[1], remote_bd_addr[2],
+                    remote_bd_addr[3], remote_bd_addr[4], remote_bd_addr[5]);
+
+    BTM_TRACE_WARNING ("Requested New Role: %d", new_role);
+
     return(BTM_CMD_STARTED);
 }
 
@@ -1082,6 +1132,11 @@ tBTM_STATUS BTM_SetLinkPolicy (BD_ADDR remote_bda, UINT16 *settings)
             *settings &= (~HCI_ENABLE_MASTER_SLAVE_SWITCH);
             BTM_TRACE_API ("BTM_SetLinkPolicy switch not supported (settings: 0x%04x)", *settings );
         }
+        if ( (*settings & HCI_ENABLE_MASTER_SLAVE_SWITCH) && (btm_blacklistted_for_role_switch(remote_bda)) )
+        {
+            *settings &= (~HCI_ENABLE_MASTER_SLAVE_SWITCH);
+            BTM_TRACE_API ("BTM_SetLinkPolicy switch not supported (settings: 0x%04x)", *settings );
+        }
         if ( (*settings & HCI_ENABLE_HOLD_MODE) && (!HCI_HOLD_MODE_SUPPORTED(localFeatures)) )
         {
             *settings &= (~HCI_ENABLE_HOLD_MODE);
@@ -1278,6 +1333,13 @@ void btm_read_remote_version_complete (UINT8 *p)
                 STREAM_TO_UINT8  (p_acl_cb->lmp_version, p);
                 STREAM_TO_UINT16 (p_acl_cb->manufacturer, p);
                 STREAM_TO_UINT16 (p_acl_cb->lmp_subversion, p);
+                BTM_TRACE_WARNING ("btm_read_remote_version_complete: BDA: %02x-%02x-%02x-%02x-%02x-%02x",
+                            p_acl_cb->remote_addr[0], p_acl_cb->remote_addr[1], p_acl_cb->remote_addr[2],
+                            p_acl_cb->remote_addr[3], p_acl_cb->remote_addr[4], p_acl_cb->remote_addr[5]);
+                BTM_TRACE_WARNING ("btm_read_remote_version_complete lmp_version %d manufacturer %d lmp_subversion %d",
+                                         p_acl_cb->lmp_version,p_acl_cb->manufacturer, p_acl_cb->lmp_subversion);
+                BTM_TRACE_DEBUG("Calling btm_read_remote_features");
+                btm_read_remote_features (p_acl_cb->hci_handle);
                 break;
             }
         }
@@ -1300,6 +1362,7 @@ void btm_process_remote_ext_features (tACL_CONN *p_acl_cb, UINT8 num_read_pages)
     UINT16              handle = p_acl_cb->hci_handle;
     tBTM_SEC_DEV_REC    *p_dev_rec = btm_find_dev_by_handle (handle);
     UINT8               page_idx;
+    UINT8             status;
 
     BTM_TRACE_DEBUG ("btm_process_remote_ext_features");
 
@@ -1317,6 +1380,32 @@ void btm_process_remote_ext_features (tACL_CONN *p_acl_cb, UINT8 num_read_pages)
     for (page_idx = 0; page_idx < num_read_pages; page_idx++)
     {
         btm_process_remote_ext_features_page (p_acl_cb, p_dev_rec, page_idx);
+    }
+
+#if (defined(BTM_SECURE_CONN_HOST_INCLUDED) && BTM_SECURE_CONN_HOST_INCLUDED == TRUE)
+    if( (num_read_pages == HCI_EXT_FEATURES_PAGE_2 + 1) &&
+        (HCI_SECURE_CONN_CTRL_SUPPORTED(p_dev_rec->features[HCI_EXT_FEATURES_PAGE_2])) &&
+        (HCI_SECURE_CONN_HOST_SUPPORTED(p_dev_rec->features[HCI_EXT_FEATURES_PAGE_1])))
+    {
+        BTM_TRACE_WARNING ("btm_process_remote_ext_features: Remote supports Secure connection");
+        p_dev_rec->sec_conn_supported = TRUE;
+    }
+#endif
+
+    if (p_dev_rec->sec_flags & BTM_SEC_NAME_KNOWN)
+    {
+        /* Name is know, unset it so that name is retrieved again
+         * from security procedure. This will ensure, that if remote device
+         * has updated its name since last connection, we will have
+         * update name of remote device. */
+        p_dev_rec->sec_flags &= ~BTM_SEC_NAME_KNOWN;
+    }
+
+    if (!(p_dev_rec->sec_flags & BTM_SEC_NAME_KNOWN) || p_dev_rec->is_originator)
+    {
+        BTM_TRACE_DEBUG ("Calling Next Security Procedure");
+        if ((status = btm_sec_execute_procedure (p_dev_rec)) != BTM_CMD_STARTED)
+            btm_sec_dev_rec_cback_event (p_dev_rec, status, FALSE);
     }
 }
 
@@ -1357,6 +1446,10 @@ void btm_process_remote_ext_features_page (tACL_CONN *p_acl_cb, tBTM_SEC_DEV_REC
                 l2cu_resubmit_pending_sec_req (p_dev_rec->bd_addr);
             }
         }
+        BTM_TRACE_WARNING ("btm_process_remote_ext_features_page 0: BDA: %02x-%02x-%02x-%02x-%02x-%02x",
+                        p_dev_rec->bd_addr[0], p_dev_rec->bd_addr[1], p_dev_rec->bd_addr[2],
+                        p_dev_rec->bd_addr[3], p_dev_rec->bd_addr[4], p_dev_rec->bd_addr[5]);
+
         break;
 
     /* Extended Page 1 */
@@ -1375,12 +1468,17 @@ void btm_process_remote_ext_features_page (tACL_CONN *p_acl_cb, tBTM_SEC_DEV_REC
             p_dev_rec->sm4 = BTM_SM4_KNOWN;
         }
 
-        BTM_TRACE_API ("ext_features_complt page_num:%d f[0]:x%02x, sm4:%x, pend:%d",
+        BTM_TRACE_WARNING ("ext_features_complt page_num:%d f[0]:x%02x, sm4:%x, pend:%d",
                         HCI_EXT_FEATURES_PAGE_1, *(p_dev_rec->features[HCI_EXT_FEATURES_PAGE_1]),
                         p_dev_rec->sm4, req_pend);
 
         if (req_pend)
             l2cu_resubmit_pending_sec_req (p_dev_rec->bd_addr);
+
+        BTM_TRACE_WARNING ("btm_process_remote_ext_features_page 1: BDA: %02x-%02x-%02x-%02x-%02x-%02x",
+                        p_dev_rec->bd_addr[0], p_dev_rec->bd_addr[1], p_dev_rec->bd_addr[2],
+                        p_dev_rec->bd_addr[3], p_dev_rec->bd_addr[4], p_dev_rec->bd_addr[5]);
+
 
         break;
 
@@ -1612,10 +1710,13 @@ void btm_read_remote_ext_features_failed (UINT8 status, UINT16 handle)
 *******************************************************************************/
 void btm_establish_continue (tACL_CONN *p_acl_cb)
 {
+    tBTM_SEC_DEV_REC *p_dev_rec = NULL;
+
 #if (defined(BTM_BUSY_LEVEL_CHANGE_INCLUDED) && BTM_BUSY_LEVEL_CHANGE_INCLUDED == TRUE)
         tBTM_BL_EVENT_DATA  evt_data;
 #endif
-        BTM_TRACE_DEBUG ("btm_establish_continue");
+    BTM_TRACE_DEBUG ("btm_establish_continue");
+    p_dev_rec = btm_find_dev(p_acl_cb->remote_addr);
 #if (!defined(BTM_BYPASS_EXTRA_ACL_SETUP) || BTM_BYPASS_EXTRA_ACL_SETUP == FALSE)
 #if (defined BLE_INCLUDED && BLE_INCLUDED == TRUE)
         if (p_acl_cb->transport == BT_TRANSPORT_BR_EDR)
@@ -1630,6 +1731,8 @@ void btm_establish_continue (tACL_CONN *p_acl_cb)
                 BTM_SetLinkPolicy (p_acl_cb->remote_addr, &btm_cb.btm_def_link_policy);
         }
 #endif
+    if(p_acl_cb->link_up_issued == FALSE)
+    {
         p_acl_cb->link_up_issued = TRUE;
 
         /* If anyone cares, tell him database changed */
@@ -1644,6 +1747,11 @@ void btm_establish_continue (tACL_CONN *p_acl_cb)
 #if BLE_INCLUDED == TRUE
             evt_data.conn.handle = p_acl_cb->hci_handle;
             evt_data.conn.transport = p_acl_cb->transport;
+            if(p_dev_rec != NULL)
+            {
+               BTM_TRACE_DEBUG ("Remote dev Addr type:: %d", p_dev_rec->ble.ble_addr_type);
+               evt_data.conn.remote_addr_type = p_dev_rec->ble.ble_addr_type;
+            }
 #endif
 
             (*btm_cb.p_bl_changed_cb)(&evt_data);
@@ -1669,6 +1777,7 @@ void btm_establish_continue (tACL_CONN *p_acl_cb)
 
 #endif
 
+    }
 }
 
 
@@ -2306,6 +2415,10 @@ void btm_acl_role_changed (UINT8 hci_status, BD_ADDR bd_addr, UINT8 new_role)
 #endif
 
     BTM_TRACE_DEBUG ("btm_acl_role_changed");
+    BTM_TRACE_WARNING ("btm_acl_role_changed: BDA: %02x-%02x-%02x-%02x-%02x-%02x",
+                p_bda[0], p_bda[1], p_bda[2], p_bda[3], p_bda[4], p_bda[5]);
+    BTM_TRACE_WARNING ("btm_acl_role_changed: New role: %d", new_role);
+
     /* Ignore any stray events */
     if (p == NULL)
     {
@@ -2451,7 +2564,7 @@ BOOLEAN BTM_TryAllocateSCN(UINT8 scn)
     /* Make sure we don't exceed max port range.
      * Stack reserves scn 1 for HFP, HSP we still do the correct way.
      */
-    if ( (scn>=BTM_MAX_SCN) || (scn == 1) )
+    if ( (scn>=BTM_MAX_SCN) || (scn <= 1) )
         return FALSE;
 
     /* check if this port is available */
@@ -2476,7 +2589,7 @@ BOOLEAN BTM_TryAllocateSCN(UINT8 scn)
 BOOLEAN BTM_FreeSCN(UINT8 scn)
 {
     BTM_TRACE_DEBUG ("BTM_FreeSCN ");
-    if (scn <= BTM_MAX_SCN)
+    if (scn <= BTM_MAX_SCN && scn>0)
     {
         btm_cb.btm_scn[scn-1] = FALSE;
         return(TRUE);
@@ -2930,6 +3043,332 @@ tBTM_STATUS BTM_ReadRSSI (BD_ADDR remote_bda, tBTM_CMPL_CB *p_cb)
 
     /* If here, no BD Addr found */
     return(BTM_UNKNOWN_ADDR);
+}
+
+/*******************************************************************************
+**
+** Function         rssi_monitor_hci_cmd_complete
+**
+** Description      This function could be set up as a completion callback for the
+**                  rssi monitor related vendor specific command.
+**
+** Returns          void
+**
+*******************************************************************************/
+static void rssi_monitor_hci_cmd_complete(void *p_data)
+{
+    tBTM_VSC_CMPL *event = (tBTM_VSC_CMPL*)p_data;
+    UINT16        opcode, length;
+    UINT8         *stream, status, subcmd;
+    UINT16        conn_handle;
+    UINT8         acl_index;
+    BD_ADDR       remote_bda;
+    tBTM_RSSI_MONITOR_CMD_CPL_CB_PARAM param;
+
+    BTM_TRACE_EVENT("%s enter", __FUNCTION__);
+    memset(&param, 0, sizeof(param));
+    if(event && (stream = (UINT8*)event->p_param_buf))
+    {
+        opcode = event->opcode;
+        length = event->param_len;
+        STREAM_TO_UINT8(status, stream);
+        STREAM_TO_UINT8(subcmd, stream);
+        STREAM_TO_UINT16(conn_handle, stream);
+        BTM_TRACE_EVENT("%s: opcode: 0x%4x, status: 0x%2x, subcmd: 0x%2x, connection handle: 0x%4x",
+                         __FUNCTION__, opcode, status, subcmd, conn_handle);
+
+        param.status = status;
+        param.subcmd = subcmd;
+        /* get address from connection handle */
+        acl_index = btm_handle_to_acl_index(conn_handle);
+        if (acl_index < MAX_L2CAP_LINKS)
+        {
+            memcpy(remote_bda, btm_cb.acl_db[acl_index].remote_addr, sizeof(BD_ADDR));
+        }
+        else
+        {
+            BTM_TRACE_EVENT("%s didn't find bd address for acl link: 0x%2x", __FUNCTION__, conn_handle);
+            return;
+        }
+
+        switch(subcmd)
+        {
+        case WRITE_RSSI_MONITOR_THRESHOLD:
+            BTM_TRACE_EVENT("%s, event WRITE_RSSI_MONITOR_THRESHOLD command complete", __FUNCTION__);
+
+            if(btm_cb.devcb.p_rssi_monitor_cmd_cpl_cb)
+                btm_cb.devcb.p_rssi_monitor_cmd_cpl_cb(remote_bda, &param);
+            break;
+        case READ_RSSI_MONITOR_THRESHOLD:
+            BTM_TRACE_EVENT("%s, event READ_RSSI_MONITOR_THRESHOLD command complete", __FUNCTION__);
+            if (HCI_SUCCESS == status)
+            {
+                signed char  low, upper;
+                UINT8        alert;
+                STREAM_TO_UINT8(low, stream);
+                STREAM_TO_UINT8(upper, stream);
+                STREAM_TO_UINT8(alert, stream);
+
+                param.detail.read_result.low   = low;
+                param.detail.read_result.upper = upper;
+                param.detail.read_result.alert = alert;
+
+                BTM_TRACE_EVENT("%s read threshold result:0x%2x, 0x%2x, 0x%2x",
+                                 __FUNCTION__, low, upper, alert);
+
+            }
+
+            if(btm_cb.devcb.p_rssi_monitor_cmd_cpl_cb)
+                btm_cb.devcb.p_rssi_monitor_cmd_cpl_cb(remote_bda, &param);
+            break;
+        case ENABLE_RSSI_MONITOR:
+            BTM_TRACE_EVENT("%s, event ENABLE_CONTROLLER_RSSI_MONITOR command complete", __FUNCTION__);
+            if (HCI_SUCCESS == status)
+            {
+                UINT8 enable;
+                STREAM_TO_UINT8(enable, stream);
+
+                param.detail.enable = enable;
+            }
+
+            if(btm_cb.devcb.p_rssi_monitor_cmd_cpl_cb)
+                btm_cb.devcb.p_rssi_monitor_cmd_cpl_cb(remote_bda, &param);
+            break;
+        default:
+            BTM_TRACE_EVENT("Rssi Monitor invalid command");
+            break;
+        }
+    }
+    BTM_TRACE_EVENT("%s exit", __FUNCTION__);
+}
+
+/*******************************************************************************
+**
+** Function         BTM_Write_Rssi_Monitor_Threshold
+**
+** Description      This function is called to write rssi threshold value,
+**                  when rssi < min, High Alerts
+**                  when  max < rssi < max, Mild Alerts
+**                  when rssi > max, No alerts
+**
+** Parameter        remote_bda: bluetooth address whose rssi is monitored
+**                  min, max: lower and upper threshold, min <= max
+**                  p_callback: the completion callback of the command
+**
+** Returns          tBTM_STATUS
+**
+*******************************************************************************/
+tBTM_STATUS BTM_Write_Rssi_Monitor_Threshold(BD_ADDR remote_bda, char min, char max)
+{
+    void      *p_buf = 0;
+    tACL_CONN *p_conn = 0;
+    UINT16    op_code = 0x03FF;
+    UINT8     sub_cmd = WRITE_RSSI_MONITOR_THRESHOLD;
+    UINT16    conn_handle = 0x0000;
+    UINT8     cmd[5], *p_cursor;
+    BTM_TRACE_API("%s enter", __FUNCTION__);
+
+    /* Find the acl connection */
+    if (!remote_bda || !(p_conn = btm_bda_to_acl(remote_bda, BT_TRANSPORT_LE)))
+    {
+        BTM_TRACE_ERROR("%s no ACL connection for address", __FUNCTION__);
+        return (BTM_UNKNOWN_ADDR);
+    }
+
+    /* p_buf is used to assemble HCI vendor specific command */
+    if (NULL == (p_buf = HCI_GET_CMD_BUF(sizeof(void*) + sizeof(cmd))))
+    {
+        BTM_TRACE_ERROR("%s HCI_GET_CMD_BUF null memory allocated", __FUNCTION__);
+        return (BTM_NO_RESOURCES);
+    }
+
+    /* assemble command buffer*/
+    p_cursor = cmd;
+    *p_cursor++ = sub_cmd;
+    /* the connection handle is put in little endian*/
+    conn_handle = p_conn->hci_handle;
+    *p_cursor++ = (UINT8)(conn_handle & 0x00FF);
+    *p_cursor++ = (UINT8)((conn_handle>>8) & 0x00FF);
+    *p_cursor++ = min;
+    *p_cursor++ = max;
+
+    btsnd_hcic_vendor_spec_cmd(p_buf, op_code, sizeof(cmd), cmd, (void*)rssi_monitor_hci_cmd_complete);
+
+    BTM_TRACE_API("%s exit", __FUNCTION__);
+    return (BTM_CMD_STARTED);
+}
+
+/*******************************************************************************
+**
+** Function         BTM_Read_Rssi_Monitor_Threshold
+**
+** Description      This function is called to read the rssi threshould settings
+**                  by sending hci vendor specific command, and the thrshould value
+**                  will be gotten as return parameters of the command
+**
+** Returns          tBTM_STATUS
+**
+*******************************************************************************/
+tBTM_STATUS BTM_Read_Rssi_Monitor_Threshold(BD_ADDR remote_bda)
+{
+    void      *p_buf = 0;
+    tACL_CONN *p_conn = 0;
+    UINT16    op_code = 0x03FF;
+    UINT8     sub_cmd = READ_RSSI_MONITOR_THRESHOLD;
+    UINT16    conn_handle = 0x0000;
+    UINT8     cmd[3], *p_cursor;
+    BTM_TRACE_API("%s enter", __FUNCTION__);
+
+    /* Find acl connection */
+    if (!remote_bda || !(p_conn = btm_bda_to_acl(remote_bda, BT_TRANSPORT_LE)))
+    {
+        BTM_TRACE_ERROR("%s no ACL connection for address", __FUNCTION__);
+        return (BTM_UNKNOWN_ADDR);
+    }
+
+    /* allocate buffer for HCI vendor specific command */
+    if (NULL == (p_buf = HCI_GET_CMD_BUF(sizeof(void*) + sizeof(cmd))))
+    {
+        BTM_TRACE_ERROR("%s HCI_GET_CMD_BUF null memory allocated", __FUNCTION__);
+        return (BTM_NO_RESOURCES);
+    }
+
+    /* assemble command content */
+    p_cursor = cmd;
+    *p_cursor++ = sub_cmd;
+
+    /* the connection handle is put in little endian*/
+    conn_handle = p_conn->hci_handle;
+    *p_cursor++ = (UINT8)(conn_handle & 0x00FF);
+    *p_cursor++ = (UINT8)((conn_handle>>8) & 0x00FF);
+
+    btsnd_hcic_vendor_spec_cmd(p_buf, op_code, sizeof(cmd), cmd, (void*)rssi_monitor_hci_cmd_complete);
+
+    BTM_TRACE_API("%s exit", __FUNCTION__);
+    return (BTM_CMD_STARTED);
+}
+
+/*******************************************************************************
+**
+** Function         BTM_Enable_Rssi_Monitor
+**
+** Description      This function is called to enable or disable rssi monitoring
+**
+** Parameters       remote_bda, the device whose rssi is monitored
+**                  enable, true or false
+**                  p_callback, the completion callback of hci vendor specific command
+**                  p_rssi_event_cb, rssi threshold event will be reported via this functiion to upper layer
+**
+** Returns          tBTM_STATUS
+**
+*******************************************************************************/
+tBTM_STATUS BTM_Enable_Rssi_Monitor(BD_ADDR remote_bda, int enable)
+{
+    void      *p_buf = 0;
+    tACL_CONN *p_conn = 0;
+    UINT16    op_code = 0x03FF;
+    UINT8     sub_cmd = ENABLE_RSSI_MONITOR;
+    UINT16    conn_handle = 0x0000;
+    UINT8     cmd[4], *p_cursor;
+    BTM_TRACE_API("%s enter", __FUNCTION__);
+
+    /* find acl connection */
+    if (!remote_bda || !(p_conn = btm_bda_to_acl(remote_bda, BT_TRANSPORT_LE)))
+    {
+        BTM_TRACE_ERROR("%s no ACL connection for address", __FUNCTION__);
+        return (BTM_UNKNOWN_ADDR);
+    }
+
+    /* allocate buffer for HCI vendor specific command */
+    if (NULL == (p_buf = HCI_GET_CMD_BUF(sizeof(void*) + sizeof(cmd))))
+    {
+        BTM_TRACE_ERROR("%s HCI_GET_CMD_BUF null memory allocated", __FUNCTION__);
+        return (BTM_NO_RESOURCES);
+    }
+
+    /* assemble command content */
+    p_cursor = cmd;
+    *p_cursor++ = sub_cmd;
+    /* the connection handle is put in little endian*/
+    conn_handle = p_conn->hci_handle;
+    *p_cursor++ = (UINT8)(conn_handle & 0x00FF);
+    *p_cursor++ = (UINT8)((conn_handle>>8) & 0x00FF);
+    *p_cursor++ = (UINT8)(enable? 0x01:0x00);
+
+    btsnd_hcic_vendor_spec_cmd(p_buf, op_code, sizeof(cmd), cmd, (void*)rssi_monitor_hci_cmd_complete);
+
+    BTM_TRACE_API("%s exit", __FUNCTION__);
+    return (BTM_CMD_STARTED);
+}
+
+/*******************************************************************************
+**
+** Function         btm_handle_rssi_monitor_event
+**
+** Description      This function is called to handle rssi event, it will relay
+**                  events to upper layer
+**
+** Parameters       p, event packet stream
+**                  evt_len, the length of p
+**
+** Returns          void
+**
+*******************************************************************************/
+void btm_handle_rssi_monitor_event(UINT8 *p, UINT8 evt_len)
+{
+    BTM_TRACE_EVENT("%s enter", __FUNCTION__);
+    if (p)
+    {
+        UINT8   type;
+        UINT16  conn_handle;
+        UINT8   acl_index;
+        signed char   rssi;
+        BD_ADDR       remote_bda;
+        tBTM_RSSI_MONITOR_EVENT_CB_PARAM param;
+
+        STREAM_TO_UINT8(type, p);
+        STREAM_TO_UINT16(conn_handle, p);
+        STREAM_TO_UINT8(rssi, p);
+
+        param.rssi_event_type = type;
+        param.rssi_value = rssi;
+        /* convert from connection handle to bluetooth address*/
+        acl_index = btm_handle_to_acl_index(conn_handle);
+        if (acl_index < MAX_L2CAP_LINKS)
+        {
+            memcpy(remote_bda, btm_cb.acl_db[acl_index].remote_addr, sizeof(BD_ADDR));
+            if (btm_cb.devcb.p_rssi_monitor_event_cb)
+            {
+                btm_cb.devcb.p_rssi_monitor_event_cb(remote_bda, &param);
+            }
+        }
+        else
+        {
+            BTM_TRACE_ERROR("%s didn't find bd address for acl link: 0x%2x", __FUNCTION__, conn_handle);
+        }
+    }
+
+    BTM_TRACE_EVENT("%s exit", __FUNCTION__);
+}
+
+/*******************************************************************************
+**
+** Function         btm_setup_rssi_threshold_callback
+**
+** Description      This function is called to setup callback to btif layer
+**
+** Parameters       com_cpl_callback, called when rssi monitor related command
+**                                    is completed
+**                  evt_callback, called when rssi threshold event reported
+**
+** Returns          void
+**
+*******************************************************************************/
+void btm_setup_rssi_threshold_callback(tBTM_RSSI_MONITOR_CMD_CPL_CB cmd_cpl_callback,
+                                         tBTM_RSSI_MONITOR_EVENT_CB evt_callback)
+{
+    btm_cb.devcb.p_rssi_monitor_cmd_cpl_cb = cmd_cpl_callback;
+    btm_cb.devcb.p_rssi_monitor_event_cb = evt_callback;
 }
 
 /*******************************************************************************

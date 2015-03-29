@@ -174,7 +174,11 @@ void l2cu_release_lcb (tL2C_LCB *p_lcb)
     }
 
 #if (BLE_INCLUDED == TRUE)
-    l2cb.is_ble_connecting = FALSE;
+    /*reset ble connecting flag only if the addr matches*/
+    if(!memcmp(l2cb.ble_connecting_bda,p_lcb->remote_bd_addr, BD_ADDR_LEN))
+    {
+        l2cb.is_ble_connecting = FALSE;
+    }
 #endif
 
 #if (L2CAP_NUM_FIXED_CHNLS > 0)
@@ -937,8 +941,15 @@ void l2cu_send_peer_disc_req (tL2C_CCB *p_ccb)
         while (p_ccb->xmit_hold_q.p_first)
         {
             p_buf2 = (BT_HDR *)GKI_dequeue (&p_ccb->xmit_hold_q);
-            l2cu_set_acl_hci_header (p_buf2, p_ccb);
-            l2c_link_check_send_pkts (p_ccb->p_lcb, p_ccb, p_buf2);
+            if (p_buf2 != NULL)
+            {
+                l2cu_set_acl_hci_header (p_buf2, p_ccb);
+                l2c_link_check_send_pkts (p_ccb->p_lcb, p_ccb, p_buf2);
+            }
+            else
+            {
+                L2CAP_TRACE_ERROR ("L2CAP - GKI_dequeue returned NULL");
+            }
         }
     }
 
@@ -2509,6 +2520,12 @@ BOOLEAN l2cu_set_acl_priority (BD_ADDR bd_addr, UINT8 priority, BOOLEAN reset_af
         return (FALSE);
     }
 
+    if (p_lcb->acl_priority != priority)
+    {
+        p_lcb->acl_priority = priority;
+        l2c_link_adjust_allocation();
+    }
+
     if (BTM_IS_BRCM_CONTROLLER())
     {
         /* Called from above L2CAP through API; send VSC if changed */
@@ -2664,7 +2681,7 @@ void l2cu_adjust_out_mps (tL2C_CCB *p_ccb)
         For EDR 2.0 packet size is 1027.  So we better send RFCOMM packet as 1 3DH5 packet
         1 * 1027 = 1027.  Minus 4 bytes L2CAP header 1023.  */
         if (p_ccb->peer_cfg.fcr.mps >= packet_size)
-            p_ccb->tx_mps = p_ccb->peer_cfg.fcr.mps / packet_size * packet_size;
+            p_ccb->tx_mps = packet_size;
         else
             p_ccb->tx_mps = p_ccb->peer_cfg.fcr.mps;
 
@@ -3476,7 +3493,7 @@ void l2cu_check_channel_congestion (tL2C_CCB *p_ccb)
                 p_ccb->cong_sent = TRUE;
                 if (p_ccb->p_rcb && p_ccb->p_rcb->api.pL2CA_CongestionStatus_Cb)
                 {
-                    L2CAP_TRACE_DEBUG ("L2CAP - Calling CongestionStatus_Cb (TRUE),CID:0x%04x,XmitQ:%u,Quota:%u",
+                    L2CAP_TRACE_WARNING ("L2CAP - Calling CongestionStatus_Cb (TRUE),CID:0x%04x,XmitQ:%u,Quota:%u",
                         p_ccb->local_cid, q_count, p_ccb->buff_quota);
 
                     (*p_ccb->p_rcb->api.pL2CA_CongestionStatus_Cb)(p_ccb->local_cid, TRUE);

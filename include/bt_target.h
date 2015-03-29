@@ -1,6 +1,8 @@
 /******************************************************************************
  *
  *  Copyright (c) 2014 The Android Open Source Project
+ *  Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ *  Not a Contribution.
  *  Copyright (C) 1999-2012 Broadcom Corporation
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +26,10 @@
 #define BUILDCFG
 #endif
 #include "data_types.h"
+
+#ifndef BT_CLEAN_TURN_ON_DISABLED
+#define BT_CLEAN_TURN_ON_DISABLED 1
+#endif
 
 
 #ifndef BTIF_HSAG_SERVICE_NAME
@@ -76,6 +82,15 @@
 
 #ifndef L2CAP_EXTFEA_SUPPORTED_MASK
 #define L2CAP_EXTFEA_SUPPORTED_MASK (L2CAP_EXTFEA_ENH_RETRANS | L2CAP_EXTFEA_STREAM_MODE | L2CAP_EXTFEA_NO_CRC | L2CAP_EXTFEA_FIXED_CHNLS)
+#endif
+
+/* This feature is used to update any QCOM related changes in the stack*/
+#ifndef BLUETOOTH_QTI_SW
+#define BLUETOOTH_QTI_SW TRUE
+#endif
+
+#ifndef BTA_BLE_SKIP_CONN_UPD
+#define BTA_BLE_SKIP_CONN_UPD FALSE
 #endif
 
 #ifndef BTUI_OPS_FORMATS
@@ -147,6 +162,14 @@
 #define BTA_FS_INCLUDED TRUE
 #endif
 
+#ifndef BTA_AC_INCLUDED
+#define BTA_AC_INCLUDED FALSE
+#endif
+
+#ifndef BTA_HD_INCLUDED
+#define BTA_HD_INCLUDED TRUE
+#endif
+
 #ifndef BTA_HH_INCLUDED
 #define BTA_HH_INCLUDED TRUE
 #endif
@@ -172,7 +195,7 @@
 #endif
 
 #ifndef BTA_AV_SINK_INCLUDED
-#define BTA_AV_SINK_INCLUDED FALSE
+#define BTA_AV_SINK_INCLUDED TRUE
 #endif
 
 #ifndef BTA_DISABLE_DELAY
@@ -255,6 +278,10 @@
 #define BTA_AV_CO_CP_SCMS_T  FALSE
 #endif
 
+#ifndef BTA_AV_DISCONNECT_IF_NO_SCMS_T
+#define BTA_AV_DISCONNECT_IF_NO_SCMS_T  FALSE
+#endif
+
 #ifndef AVDT_CONNECT_CP_ONLY
 #define AVDT_CONNECT_CP_ONLY  FALSE
 #endif
@@ -262,6 +289,19 @@
 /* This feature is used to eanble interleaved scan*/
 #ifndef BTA_HOST_INTERLEAVE_SEARCH
 #define BTA_HOST_INTERLEAVE_SEARCH FALSE
+#endif
+
+/* This feature is used to skip query of ble read remote features*/
+#ifndef BTA_SKIP_BLE_READ_REMOTE_FEAT
+#define BTA_SKIP_BLE_READ_REMOTE_FEAT FALSE
+#endif
+
+#ifndef BTA_SKIP_BLE_START_ENCRYPTION
+#define BTA_SKIP_BLE_START_ENCRYPTION FALSE
+#endif
+
+#ifndef BTA_DMT_SPT_FLAG_DISABLE
+#define BTA_DMT_SPT_FLAG_DISABLE  TRUE
 #endif
 
 #ifndef BT_TRACE_PROTOCOL
@@ -274,6 +314,10 @@
 
 #ifndef BT_TRACE_BTIF
 #define BT_TRACE_BTIF  TRUE
+#endif
+
+#ifndef BT_TRACE_LATENCY_AUDIO
+#define BT_TRACE_LATENCY_AUDIO  TRUE
 #endif
 
 #ifndef BTTRC_INCLUDED
@@ -655,6 +699,8 @@ BT_API extern void bte_main_hci_send (BT_HDR *p_msg, UINT16 event);
 BT_API extern void bte_main_lpm_allow_bt_device_sleep(void);
 #endif
 
+BT_API extern void bte_ssr_cleanup(void);
+
 #ifdef __cplusplus
 }
 #endif
@@ -762,10 +808,15 @@ and USER_HW_DISABLE_API macros */
 #define BTM_SCO_HCI_INCLUDED            FALSE       /* TRUE includes SCO over HCI code */
 #endif
 
+#if (BLUETOOTH_QTI_SW == TRUE) /* Enable WBS only under this flag.*/
+#define BTM_WBS_INCLUDED            TRUE
+#else
 /* Includes WBS if TRUE */
 #ifndef BTM_WBS_INCLUDED
 #define BTM_WBS_INCLUDED            FALSE       /* TRUE includes WBS code */
 #endif
+#endif
+
 
 /* Includes PCM2 support if TRUE */
 #ifndef BTM_PCM2_INCLUDED
@@ -1037,7 +1088,7 @@ and USER_HW_DISABLE_API macros */
 
 /* Maximum number of callbacks that can be registered using BTM_RegisterForVSEvents */
 #ifndef BTM_MAX_VSE_CALLBACKS
-#define BTM_MAX_VSE_CALLBACKS           3
+#define BTM_MAX_VSE_CALLBACKS           4
 #endif
 
 /******************************************
@@ -1086,9 +1137,26 @@ and USER_HW_DISABLE_API macros */
 #define BTM_OOB_INCLUDED                TRUE
 #endif
 
+/* Include No MITM/No Bonding/No Keys implementation for Simple Pairing */
+#ifndef BTM_NO_MITM_NO_BONDING_INCLUDED
+#define BTM_NO_MITM_NO_BONDING_INCLUDED  FALSE
+#endif
+
+/* Include No MITM implementation for Simple Pairing */
+#ifndef BTM_NO_MITM_INCLUDED
+#define BTM_NO_MITM_INCLUDED  FALSE
+#endif
+
 /* TRUE to include Sniff Subrating */
 #ifndef BTM_SSR_INCLUDED
 #define BTM_SSR_INCLUDED                TRUE
+#endif
+
+/* TRUE to include Secure connection Host Part */
+#ifndef BTM_SECURE_CONN_HOST_INCLUDED
+#define BTM_SECURE_CONN_HOST_INCLUDED    TRUE
+/* TRUE to read the controller capability */
+#define BTM_READ_CTLR_CAP_INCLUDED       TRUE
 #endif
 
 /*************************
@@ -1118,16 +1186,16 @@ and USER_HW_DISABLE_API macros */
 #define L2CAP_FCR_INCLUDED TRUE
 #endif
 
-/* The maximum number of simultaneous links that L2CAP can support. */
-#ifndef MAX_ACL_CONNECTIONS
-#define MAX_L2CAP_LINKS             7
-#else
-#define MAX_L2CAP_LINKS             MAX_ACL_CONNECTIONS
-#endif
-
 /* The maximum number of simultaneous channels that L2CAP can support. */
 #ifndef MAX_L2CAP_CHANNELS
 #define MAX_L2CAP_CHANNELS          16
+#endif
+
+/* The maximum number of simultaneous links that L2CAP can support. */
+#ifndef MAX_L2CAP_CHANNELS
+#define MAX_L2CAP_LINKS             7
+#else
+#define MAX_L2CAP_LINKS             MAX_L2CAP_CHANNELS
 #endif
 
 /* The maximum number of simultaneous applications that can register with L2CAP. */
@@ -1182,7 +1250,7 @@ and USER_HW_DISABLE_API macros */
 
 /* Whether link wants to be the master or the slave. */
 #ifndef L2CAP_DESIRED_LINK_ROLE
-#define L2CAP_DESIRED_LINK_ROLE     HCI_ROLE_SLAVE
+#define L2CAP_DESIRED_LINK_ROLE     HCI_ROLE_MASTER
 #endif
 
 /* Include Non-Flushable Packet Boundary Flag feature of Lisbon */
@@ -1402,7 +1470,11 @@ and USER_HW_DISABLE_API macros */
 #endif
 
 #ifndef GATT_MAX_PHY_CHANNEL
+#ifndef MAX_L2CAP_CHANNELS
 #define GATT_MAX_PHY_CHANNEL        7
+#else
+#define GATT_MAX_PHY_CHANNEL        MAX_L2CAP_CHANNELS
+#endif
 #endif
 
 /* Used for conformance testing ONLY */
@@ -1467,7 +1539,7 @@ and USER_HW_DISABLE_API macros */
 
 /* The maximum number of SDP records the server can support. */
 #ifndef SDP_MAX_RECORDS
-#define SDP_MAX_RECORDS             20
+#define SDP_MAX_RECORDS             25
 #endif
 
 /* The maximum number of attributes in each record. */
@@ -1753,6 +1825,23 @@ and USER_HW_DISABLE_API macros */
 #ifndef OBX_MD5_TEST_INCLUDED
 #define OBX_MD5_TEST_INCLUDED       FALSE
 #endif
+
+/* TRUE to include Obex Over L2CAP */
+#ifndef OBX_OVER_L2CAP_INCLUDED
+#define OBX_OVER_L2CAP_INCLUDED               TRUE
+#endif
+
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+#define MAX_L2C_SOCK_CONNECTIONS              (8)
+#define OBX_OVER_L2C_MAX_MTU                  (65000)
+#define OBX_OVER_L2C_TX_WINDOW_SIZE           (16)
+#define OBX_OVER_L2C_MAX_TX_B4_DISCNT         (20)
+#define OBX_OVER_L2C_RETX_TOUT                (2000)
+#define OBX_OVER_L2C_MONITOR_TOUT             (12000)
+#define OBX_OVER_L2C_MPS_SIZE                 (1008)
+#define OBX_OVER_L2C_DYNAMIC_POOL_ENABLED     (FALSE)
+#endif
+
 
 /* TRUE to include OBEX 1.4 enhancement (including Obex Over L2CAP) */
 #ifndef OBX_14_INCLUDED
@@ -2128,6 +2217,11 @@ Range: Minimum 12000 (12 secs) on BR/EDR when supporting PBF.
 /* Default Security level for NAP role. */
 #ifndef PAN_NAP_SECURITY_LEVEL
 #define PAN_NAP_SECURITY_LEVEL           0
+#endif
+
+/*This ensures that PANU Service record will not be advertised on SDP */
+#ifndef PAN_ALWAYS_NAP_NO_PANU_ON_SDP
+#define PAN_ALWAYS_NAP_NO_PANU_ON_SDP TRUE
 #endif
 
 
@@ -2642,11 +2736,11 @@ Range: Minimum 12000 (12 secs) on BR/EDR when supporting PBF.
 
 /* HID Device Role Included */
 #ifndef HID_DEV_INCLUDED
-#define HID_DEV_INCLUDED             FALSE
+#define HID_DEV_INCLUDED             TRUE
 #endif
 
 #ifndef HID_DEV_PM_INCLUDED
-#define HID_DEV_PM_INCLUDED         TRUE
+#define HID_DEV_PM_INCLUDED         FALSE
 #endif
 
 /* The HID Device is a virtual cable */
@@ -2798,7 +2892,11 @@ Range: Minimum 12000 (12 secs) on BR/EDR when supporting PBF.
 #endif
 
 #ifndef HID_HOST_MAX_DEVICES
+#ifndef MAX_L2CAP_CHANNELS
 #define HID_HOST_MAX_DEVICES        7
+#else
+#define HID_HOST_MAX_DEVICES        MAX_L2CAP_CHANNELS
+#endif
 #endif
 
 #ifndef HID_HOST_MTU
@@ -3309,6 +3407,18 @@ Range: Minimum 12000 (12 secs) on BR/EDR when supporting PBF.
 
 /******************************************************************************
 **
+** DI
+**
+******************************************************************************/
+#if (defined(SDP_DI_INCLUDED) && (SDP_DI_INCLUDED == TRUE))
+/* TRUE to provide remote device identification record to application */
+#ifndef RMT_DI_TO_APP_INCLUDED
+#define RMT_DI_TO_APP_INCLUDED      TRUE
+#endif
+#endif
+
+/******************************************************************************
+**
 ** PAN
 **
 ******************************************************************************/
@@ -3463,6 +3573,19 @@ Range: Minimum 12000 (12 secs) when supporting PBF.
 #define AVRC_CTLR_INCLUDED          TRUE
 #endif
 
+#ifndef SDP_AVRCP_1_5
+#define SDP_AVRCP_1_5               TRUE
+
+#if  SDP_AVRCP_1_5    == TRUE
+#ifndef AVCT_BROWSE_INCLUDED
+#define AVCT_BROWSE_INCLUDED        TRUE
+#else
+#ifndef AVCT_BROWSE_INCLUDED
+#define AVCT_BROWSE_INCLUDED        FALSE
+#endif
+#endif
+#endif
+#endif
 /******************************************************************************
 **
 ** MCAP
@@ -3698,6 +3821,11 @@ The maximum number of payload octets that the local device can receive in a sing
 /* When TRUE indicates that an application task is to be run */
 #ifndef APPL_INCLUDED
 #define APPL_INCLUDED                TRUE
+#endif
+
+/* TEST_APP_INTERFACE */
+#ifndef TEST_APP_INTERFACE
+#define TEST_APP_INTERFACE           TRUE
 #endif
 
 /* When TRUE remote terminal code included (RPC MUST be included) */

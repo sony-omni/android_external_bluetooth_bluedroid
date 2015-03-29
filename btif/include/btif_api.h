@@ -74,6 +74,17 @@ bt_status_t btif_disable_bluetooth(void);
 
 /*******************************************************************************
 **
+** Function         btif_ssr_cleanup
+**
+** Description      Inititates ssr clean during Disable timeout.
+**
+** Returns          void
+**
+*******************************************************************************/
+void btif_ssr_cleanup(void);
+
+/*******************************************************************************
+**
 ** Function         btif_shutdown_bluetooth
 **
 ** Description      Finalizes BT scheduler shutdown and terminates BTIF
@@ -312,6 +323,18 @@ bt_status_t btif_dm_get_remote_service_record(bt_bdaddr_t *remote_addr,
 **
 *******************************************************************************/
 bt_status_t btif_dm_get_remote_services(bt_bdaddr_t *remote_addr);
+
+/*******************************************************************************
+**
+** Function         btif_dm_get_remote_services_by_transport
+**
+** Description      Start SDP to get remote services by transport
+**
+** Returns          bt_status_t
+**
+*******************************************************************************/
+bt_status_t btif_dm_get_remote_services_by_transport(bt_bdaddr_t *remote_addr, int transport);
+
 
 /*******************************************************************************
 **

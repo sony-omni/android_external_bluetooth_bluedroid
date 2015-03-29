@@ -1,6 +1,8 @@
 /******************************************************************************
  *
  *  Copyright (C) 2003-2014 Broadcom Corporation
+ *  Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ *  Not a Contribution.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -46,7 +48,12 @@
 #define BTA_BUSY                3
 #define BTA_NO_RESOURCES        4
 #define BTA_WRONG_MODE          5
-
+#define BTA_FAILED_ESTABLISH    6
+#define BTA_TIMEOUT             7
+#define BTA_HOST_DISCONN        8
+#define BTA_PEER_DISCONN        9
+#define BTA_LMP_TIMEOUT         10
+#define BTA_ERR_KEY_MISSING     11
 typedef UINT8 tBTA_STATUS;
 
 /*
@@ -75,7 +82,7 @@ typedef UINT8 tBTA_STATUS;
 #define BTA_NAP_SERVICE_ID      15          /* PAN Network access point */
 #define BTA_GN_SERVICE_ID       16          /* PAN Group Ad-hoc networks */
 #define BTA_SAP_SERVICE_ID      17          /* SIM Access profile */
-#define BTA_A2DP_SERVICE_ID     18          /* A2DP Sink */
+#define BTA_A2DP_SRC_SERVICE_ID     18      /* A2DP Src */
 #define BTA_AVRCP_SERVICE_ID    19          /* A/V remote control */
 #define BTA_HID_SERVICE_ID      20          /* HID */
 #define BTA_VDP_SERVICE_ID      21          /* Video distribution */
@@ -86,19 +93,21 @@ typedef UINT8 tBTA_STATUS;
 #define BTA_MN_SERVICE_ID       26          /* Message Notification Service */
 #define BTA_HDP_SERVICE_ID      27          /* Health Device Profile */
 #define BTA_PCE_SERVICE_ID      28          /* PhoneBook Access Client*/
+#define BTA_A2DP_SINK_SERVICE_ID 29          /* A2DP Sink */
+#define BTA_HIDD_SERVICE_ID     30          /* HID Device */
 
 #if BLE_INCLUDED == TRUE && BTA_GATT_INCLUDED == TRUE
 /* BLE profile service ID */
-#define BTA_BLE_SERVICE_ID      29          /* GATT profile */
+#define BTA_BLE_SERVICE_ID      31          /* GATT profile */
 
 // btla-specific ++
-#define BTA_USER_SERVICE_ID     30          /* User requested UUID */
+#define BTA_USER_SERVICE_ID     32          /* User requested UUID */
 
-#define BTA_MAX_SERVICE_ID      31
+#define BTA_MAX_SERVICE_ID      33
 // btla-specific --
 #else
-#define BTA_USER_SERVICE_ID     29          /* User requested UUID */
-#define BTA_MAX_SERVICE_ID      30
+#define BTA_USER_SERVICE_ID     31          /* User requested UUID */
+#define BTA_MAX_SERVICE_ID      32
 #endif
 /* service IDs (BTM_SEC_SERVICE_FIRST_EMPTY + 1) to (BTM_SEC_MAX_SERVICES - 1)
  * are used by BTA JV */
@@ -137,22 +146,23 @@ typedef UINT8 tBTA_SERVICE_ID;
 #define BTA_MN_SERVICE_MASK         0x04000000  /* Message Notification Profile */
 #define BTA_HL_SERVICE_MASK         0x08000000  /* Health Device Profile */
 #define BTA_PCE_SERVICE_MASK        0x10000000  /* Phone Book Client */
+#define BTA_HIDD_SERVICE_MASK       0x20000000  /* HID Device */
 
 #if BLE_INCLUDED == TRUE && BTA_GATT_INCLUDED == TRUE
-#define BTA_BLE_SERVICE_MASK        0x20000000  /* GATT based service */
+#define BTA_BLE_SERVICE_MASK        0x40000000  /* GATT based service */
 // btla-specific ++
-#define BTA_USER_SERVICE_MASK       0x40000000  /* Message Notification Profile */
+#define BTA_USER_SERVICE_MASK       0x80000000  /* Message Notification Profile */
 // btla-specific --
 #else
 // btla-specific ++
-#define BTA_USER_SERVICE_MASK       0x20000000  /* Message Notification Profile */
+#define BTA_USER_SERVICE_MASK       0x40000000  /* Message Notification Profile */
 // btla-specific --
 #endif
 
 #if BLE_INCLUDED == TRUE && BTA_GATT_INCLUDED == TRUE
-#define BTA_ALL_SERVICE_MASK        0x3FFFFFFF  /* All services supported by BTA. */
+#define BTA_ALL_SERVICE_MASK        0x7FFFFFFF  /* All services supported by BTA. */
 #else
-#define BTA_ALL_SERVICE_MASK        0x1FFFFFFF  /* All services supported by BTA. */
+#define BTA_ALL_SERVICE_MASK        0x3FFFFFFF  /* All services supported by BTA. */
 #endif
 
 typedef UINT32 tBTA_SERVICE_MASK;
@@ -171,7 +181,7 @@ typedef struct
 #define BTA_SEC_AUTHENTICATE    (BTM_SEC_IN_AUTHENTICATE | BTM_SEC_OUT_AUTHENTICATE) /* Authentication required. */
 #define BTA_SEC_ENCRYPT         (BTM_SEC_IN_ENCRYPT | BTM_SEC_OUT_ENCRYPT)           /* Encryption required. */
 
-typedef UINT8 tBTA_SEC;
+typedef UINT16 tBTA_SEC;
 
 /* Ignore for Discoverable, Connectable, Pairable and Connectable Paired only device modes */
 
@@ -638,6 +648,7 @@ typedef UINT8 tBTA_SIG_STRENGTH_MASK;
 #define BTA_DM_HW_ERROR_EVT             24      /* BT Chip H/W error */
 #define BTA_DM_LE_FEATURES_READ         25      /* Cotroller specific LE features are read */
 #define BTA_DM_ENER_INFO_READ           26      /* Energy info read */
+#define BTA_DM_REM_NAME_EVT             27      /* Remote name event */
 typedef UINT8 tBTA_DM_SEC_EVT;
 
 /* Structure associated with BTA_DM_ENABLE_EVT */
@@ -654,6 +665,7 @@ typedef struct
     BD_ADDR         bd_addr;            /* BD address peer device. */
     DEV_CLASS       dev_class;          /* Class of Device */
     BD_NAME         bd_name;            /* Name of peer device. */
+    BOOLEAN         secure;             /* Secured PIN key or not */
 } tBTA_DM_PIN_REQ;
 
 /* BLE related definition */
@@ -786,6 +798,7 @@ typedef struct
     BD_ADDR         bd_addr;            /* BD address peer device. */
 #if BLE_INCLUDED == TRUE
     tBTA_TRANSPORT  link_type;
+    UINT8  remote_addr_type;
 #endif
 } tBTA_DM_LINK_UP;
 
@@ -824,6 +837,13 @@ typedef struct
                                     Otherwise, the number of ACL links */
     UINT8           level_flags; /* indicates individual flags */
 } tBTA_DM_BUSY_LEVEL;
+
+/* Structure associated with BTA_DM_REM_NAME_EVT */
+typedef struct
+{
+    BD_ADDR         bd_addr;            /* BD address peer device. */
+    BD_NAME         bd_name;            /* Name of peer device. */
+} tBTA_DM_REM_NAME_EVT;
 
 #define BTA_IO_CAP_OUT      BTM_IO_CAP_OUT      /* DisplayOnly */
 #define BTA_IO_CAP_IO       BTM_IO_CAP_IO       /* DisplayYesNo */
@@ -928,6 +948,7 @@ typedef union
     tBTA_DM_LINK_UP     link_up;       /* ACL connection down event */
     tBTA_DM_LINK_DOWN   link_down;       /* ACL connection down event */
     tBTA_DM_SIG_STRENGTH sig_strength;  /* rssi and link quality value */
+    tBTA_DM_REM_NAME_EVT rem_name_evt; /* remote name event */
     tBTA_DM_BUSY_LEVEL  busy_level;     /* System busy level */
     tBTA_DM_SP_CFM_REQ  cfm_req;        /* user confirm request */
     tBTA_DM_SP_KEY_NOTIF key_notif;     /* passkey notification */
@@ -1026,6 +1047,9 @@ typedef struct
     tBTA_DM_BLE_PF_TIMEOUT_CNT found_timeout_cnt;
 } tBTA_DM_BLE_PF_FILT_PARAMS;
 
+/* HCI RAW Command Callback */
+typedef tBTM_RAW_CMPL_CB        tBTA_RAW_CMPL_CBACK;
+
 /* Vendor Specific Command Callback */
 typedef tBTM_VSC_CMPL_CB        tBTA_VENDOR_CMPL_CBACK;
 
@@ -1068,12 +1092,29 @@ typedef struct
     UINT8           num_resps;          /* Number of inquiry responses. */
 } tBTA_DM_INQ_CMPL;
 
+
+/* Device Identification (DI) data structure
+*/
+/* Used to set the DI record */
+typedef tSDP_DI_RECORD          tBTA_DI_RECORD;
+/* Used to get the DI record */
+typedef tSDP_DI_GET_RECORD      tBTA_DI_GET_RECORD;
+/* SDP discovery database */
+typedef tSDP_DISCOVERY_DB       tBTA_DISCOVERY_DB;
+
+#ifndef         BTA_DI_NUM_MAX
+#define         BTA_DI_NUM_MAX       3
+#endif
+
 /* Structure associated with BTA_DM_DI_DISC_CMPL_EVT */
 typedef struct
 {
     BD_ADDR             bd_addr;        /* BD address peer device. */
     UINT8               num_record;     /* Number of DI record */
     tBTA_STATUS         result;
+#if (defined(RMT_DI_TO_APP_INCLUDED) && (RMT_DI_TO_APP_INCLUDED == TRUE))
+    tBTA_DI_GET_RECORD  p_device_info;  /* Primary DI record OR 1st DI record*/
+#endif
 } tBTA_DM_DI_DISC_CMPL;
 
 /* Structure associated with BTA_DM_DISC_RES_EVT */
@@ -1279,8 +1320,8 @@ typedef UINT8 tBTA_DM_PM_ACTTION;
 #endif
 
 #ifndef BTA_DM_PM_SNIFF2_MAX
-#define BTA_DM_PM_SNIFF2_MAX     180
-#define BTA_DM_PM_SNIFF2_MIN     150
+#define BTA_DM_PM_SNIFF2_MAX     54
+#define BTA_DM_PM_SNIFF2_MIN     30
 #define BTA_DM_PM_SNIFF2_ATTEMPT 4
 #define BTA_DM_PM_SNIFF2_TIMEOUT 1
 #endif
@@ -1326,19 +1367,6 @@ typedef void (tBTA_DM_SWITCH_CBACK)(tBTA_DM_SWITCH_EVT event, tBTA_STATUS status
 
 typedef UINT8 tBTA_DM_ROUTE_PATH;
 
-
-/* Device Identification (DI) data structure
-*/
-/* Used to set the DI record */
-typedef tSDP_DI_RECORD          tBTA_DI_RECORD;
-/* Used to get the DI record */
-typedef tSDP_DI_GET_RECORD      tBTA_DI_GET_RECORD;
-/* SDP discovery database */
-typedef tSDP_DISCOVERY_DB       tBTA_DISCOVERY_DB;
-
-#ifndef         BTA_DI_NUM_MAX
-#define         BTA_DI_NUM_MAX       3
-#endif
 
 /* Device features mask definitions */
 #define BTA_FEATURE_BYTES_PER_PAGE  BTM_FEATURE_BYTES_PER_PAGE
@@ -1490,6 +1518,18 @@ BTA_API extern void BTA_DmSetScanParam (UINT16 page_scan_interval, UINT16 page_s
 *******************************************************************************/
 BTA_API extern void BTA_DmSetAfhChannels(UINT8 first, UINT8 last);
 
+/*******************************************************************************
+**
+** Function         BTA_DmHciRawCommand
+**
+** Description      This function sends the HCI RAW command
+**                  to the controller
+**
+**
+** Returns          tBTA_STATUS
+**
+*******************************************************************************/
+BTA_API extern tBTA_STATUS BTA_DmHciRawCommand (UINT16 opcode, UINT8 param_len,UINT8 *p_param_buf, tBTA_RAW_CMPL_CBACK *p_cback);
 
 /*******************************************************************************
 **
@@ -1717,7 +1757,7 @@ BTA_API extern void BTA_DmPasskeyCancel(BD_ADDR bd_addr);
 BTA_API extern void BTA_DmAddDevice(BD_ADDR bd_addr, DEV_CLASS dev_class,
                                     LINK_KEY link_key, tBTA_SERVICE_MASK trusted_mask,
                                     BOOLEAN is_trusted, UINT8 key_type,
-                                    tBTA_IO_CAP io_cap);
+                                    tBTA_IO_CAP io_cap, UINT8 pin_len);
 
 /*******************************************************************************
 **

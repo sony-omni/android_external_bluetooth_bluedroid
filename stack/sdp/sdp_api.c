@@ -857,6 +857,42 @@ BOOLEAN SDP_FindAddProtoListsElemInRec (tSDP_DISC_REC *p_rec, UINT16 layer_uuid,
     return(FALSE);
 }
 
+#if (defined(OBX_OVER_L2CAP_INCLUDED) && OBX_OVER_L2CAP_INCLUDED == TRUE)
+/*******************************************************************************
+**
+** Function         SDP_FindL2CapPsmInRec
+**
+** Description      This function looks at a specific discovery record for the
+**                  l2cap psm, and pulls out the GOEP l2cap psm.
+**
+** Returns          TRUE if found, FALSE if not
+**                  If found, GOEP l2cap psm that were passed in are filled in.
+**
+*******************************************************************************/
+BOOLEAN SDP_FindL2CapPsmInRec (tSDP_DISC_REC *p_rec, UINT16 *p_l2c_psm)
+{
+#if SDP_CLIENT_ENABLED == TRUE
+    tSDP_DISC_ATTR  *p_attr;
+
+    p_attr = p_rec->p_first_attr;
+    while (p_attr)
+    {
+        /* Find the profile descriptor list */
+        if ((p_attr->attr_id == ATTR_ID_OBX_OVR_L2CAP_PSM)
+                && (SDP_DISC_ATTR_TYPE(p_attr->attr_len_type) == UINT_DESC_TYPE)
+                && (SDP_DISC_ATTR_LEN(p_attr->attr_len_type) == 2))
+        {
+            *p_l2c_psm = p_attr->attr_value.v.u16;
+            return(TRUE);
+        }
+        p_attr = p_attr->p_next_attr;
+    }
+#endif  /* CLIENT_ENABLED == TRUE */
+
+    /* If here, no match found */
+    return(FALSE);
+}
+#endif
 
 /*******************************************************************************
 **
@@ -1073,39 +1109,69 @@ UINT16 SDP_GetDiRecord( UINT8 get_record_index, tSDP_DI_GET_RECORD *p_device_inf
 
         p_curr_attr = SDP_FindAttributeInRec( p_curr_record, ATTR_ID_SPECIFICATION_ID );
         if ( p_curr_attr )
+        {
             p_device_info->spec_id = p_curr_attr->attr_value.v.u16;
+        }
         else
+        {
+            SDP_TRACE_ERROR("SPECIFICATION ID mandatory attribute is not found");
             result = SDP_ERR_ATTR_NOT_PRESENT;
+        }
 
         p_curr_attr = SDP_FindAttributeInRec( p_curr_record, ATTR_ID_VENDOR_ID );
         if ( p_curr_attr )
+        {
             p_device_info->rec.vendor = p_curr_attr->attr_value.v.u16;
+        }
         else
+        {
+            SDP_TRACE_ERROR("VENDOR ID mandatory attribute is not found");
             result = SDP_ERR_ATTR_NOT_PRESENT;
+        }
 
         p_curr_attr = SDP_FindAttributeInRec( p_curr_record, ATTR_ID_VENDOR_ID_SOURCE );
         if ( p_curr_attr )
+        {
             p_device_info->rec.vendor_id_source = p_curr_attr->attr_value.v.u16;
+        }
         else
+        {
+            SDP_TRACE_ERROR("VENDOR ID SOURCE mandatory attribute is not found");
             result = SDP_ERR_ATTR_NOT_PRESENT;
+        }
 
         p_curr_attr = SDP_FindAttributeInRec( p_curr_record, ATTR_ID_PRODUCT_ID );
         if ( p_curr_attr )
+        {
             p_device_info->rec.product = p_curr_attr->attr_value.v.u16;
+        }
         else
+        {
+            SDP_TRACE_ERROR("PRODUCT ID mandatory attribute is not found");
             result = SDP_ERR_ATTR_NOT_PRESENT;
+        }
 
         p_curr_attr = SDP_FindAttributeInRec( p_curr_record, ATTR_ID_PRODUCT_VERSION );
         if ( p_curr_attr )
+        {
             p_device_info->rec.version = p_curr_attr->attr_value.v.u16;
+        }
         else
+        {
+            SDP_TRACE_ERROR("PRODUCT VERSION mandatory attribute is not found");
             result = SDP_ERR_ATTR_NOT_PRESENT;
+        }
 
         p_curr_attr = SDP_FindAttributeInRec( p_curr_record, ATTR_ID_PRIMARY_RECORD );
         if ( p_curr_attr )
+        {
             p_device_info->rec.primary_record = (BOOLEAN)p_curr_attr->attr_value.v.u8;
+        }
         else
+        {
+            SDP_TRACE_ERROR("PRIMARY RECORD mandatory attribute is not found");
             result = SDP_ERR_ATTR_NOT_PRESENT;
+        }
     }
 
     return result;
@@ -1401,6 +1467,22 @@ UINT8 SDP_SetTraceLevel (UINT8 new_level)
 
     return(sdp_cb.trace_level);
 }
+
+/****************************************************************************
+**
+** Function         SDP_Dev_Blacklisted_For_Avrcp15
+**
+** Description      This function is called to check if Remote device
+**                  is blacklisted for Avrcp version.
+**
+** Returns          BOOLEAN
+**
+*******************************************************************************/
+BOOLEAN SDP_Dev_Blacklisted_For_Avrcp15 (BD_ADDR addr)
+{
+    return sdp_dev_blacklisted_for_avrcp15 (addr);
+}
+
 
 #if SDP_FOR_JV_INCLUDED == TRUE
 /*******************************************************************************

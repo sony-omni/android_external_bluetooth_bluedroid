@@ -1,5 +1,7 @@
 /******************************************************************************
  *
+ *  Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ *  Not a Contribution.
  *  Copyright (C) 2009-2012 Broadcom Corporation
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -140,6 +142,18 @@ bt_status_t btif_storage_remove_bonded_device(bt_bdaddr_t *remote_bd_addr);
 
 /*******************************************************************************
 **
+** Function         btif_storage_is_device_bonded
+**
+** Description      BTIF storage API - checks if device present in bonded list
+**
+** Returns          TRUE if the device is bonded,
+**                  FALSE otherwise
+**
+*******************************************************************************/
+BOOLEAN btif_storage_is_device_bonded(bt_bdaddr_t *remote_bd_addr);
+
+/*******************************************************************************
+**
 ** Function         btif_storage_remove_bonded_device
 **
 ** Description      BTIF storage API - Deletes the bonded device from NVRAM
@@ -237,8 +251,23 @@ bt_status_t btif_storage_add_hid_device_info(bt_bdaddr_t *remote_bd_addr,
                                                     UINT16 attr_mask, UINT8 sub_class,
                                                     UINT8 app_id, UINT16 vendor_id,
                                                     UINT16 product_id, UINT16 version,
-                                                    UINT8 ctry_code, UINT16 ssr_max_latency,
-                                                    UINT16 ssr_min_tout, UINT16 dl_len, UINT8 *dsc_list);
+                                                    UINT8 ctry_code, UINT16 ssr_max_lat,
+                                                    UINT16 ssr_min_tout, UINT16 dl_len,
+                                                    UINT8 *dsc_list, INT16 priority);
+
+/*******************************************************************************
+**
+** Function         btif_storage_add_device_priority
+**
+** Description      BTIF storage API - Adds the priority of remote devices-to NVRAM
+**
+** Returns          BT_STATUS_SUCCESS if the store was successful,
+**                  BT_STATUS_FAIL otherwise
+**
+*******************************************************************************/
+
+bt_status_t btif_storage_add_device_priority(bt_bdaddr_t *remote_bd_addr,
+                                                    INT16 priority);
 
 /*******************************************************************************
 **
@@ -382,5 +411,38 @@ bt_status_t btif_storage_set_dmt_support_type(const bt_bdaddr_t *remote_bd_addr,
 
 BOOLEAN btif_storage_is_dmt_supported_device(const bt_bdaddr_t *remote_bd_addr);
 
+/*******************************************************************************
+** Function         btif_storage_load_hidd
+**
+** Description      Loads hidd bonded device and "plugs" it into hidd
+**
+** Returns          BT_STATUS_SUCCESS if successful, BT_STATUS_FAIL otherwise
+**
+*******************************************************************************/
+bt_status_t btif_storage_load_hidd(void);
+
+/*******************************************************************************
+**
+** Function         btif_storage_set_hidd
+**
+** Description      Stores hidd bonded device info in nvram.
+**
+** Returns          BT_STATUS_SUCCESS
+**
+*******************************************************************************/
+
+bt_status_t btif_storage_set_hidd(bt_bdaddr_t *remote_bd_addr);
+
+/*******************************************************************************
+**
+** Function         btif_storage_remove_hidd
+**
+** Description      Removes hidd bonded device info from nvram
+**
+** Returns          BT_STATUS_SUCCESS
+**
+*******************************************************************************/
+
+bt_status_t btif_storage_remove_hidd(bt_bdaddr_t *remote_bd_addr);
 
 #endif /* BTIF_STORAGE_H */

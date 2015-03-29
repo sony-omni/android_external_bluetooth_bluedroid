@@ -58,12 +58,12 @@
 
 /* Stack preload process timeout period  */
 #ifndef PRELOAD_START_TIMEOUT_MS
-#define PRELOAD_START_TIMEOUT_MS 3000  // 3 seconds
+#define PRELOAD_START_TIMEOUT_MS 5000  // 3 seconds
 #endif
 
 /* Stack preload process maximum retry attempts  */
 #ifndef PRELOAD_MAX_RETRY_ATTEMPTS
-#define PRELOAD_MAX_RETRY_ATTEMPTS 0
+#define PRELOAD_MAX_RETRY_ATTEMPTS 2
 #endif
 
 /*******************************************************************************
@@ -104,6 +104,7 @@ static void bte_hci_disable(void);
 static void preload_start_wait_timer(void);
 static void preload_stop_wait_timer(void);
 
+BOOLEAN btif_is_shutdown(void);
 /*******************************************************************************
 **  Externs
 *******************************************************************************/
@@ -283,8 +284,6 @@ static void bte_hci_enable(void)
 {
     APPL_TRACE_DEBUG("%s", __FUNCTION__);
 
-    preload_start_wait_timer();
-
     if (bt_hc_if)
     {
         int result = bt_hc_if->init(&hc_callbacks, btif_local_bd_addr.address);
@@ -315,8 +314,25 @@ static void bte_hci_enable(void)
 #endif
         bt_hc_if->set_power(BT_HC_CHIP_PWR_ON);
 
+        preload_start_wait_timer();
         bt_hc_if->preload(NULL);
     }
+}
+
+/******************************************************************************
+**
+** Function         bte_ssr_cleanup
+**
+** Description      sends PWR_OFF to vendor library so that harware would be
+**                  turned off as part of hardware subsystem crash
+**
+** Returns          None
+**
+******************************************************************************/
+void bte_ssr_cleanup(void)
+{
+    APPL_TRACE_ERROR("%s", __FUNCTION__);
+    bt_hc_if->ssr_cleanup();
 }
 
 /******************************************************************************
@@ -752,7 +768,14 @@ static char *alloc(int size)
 ******************************************************************************/
 static void dealloc(TRANSAC transac)
 {
-    GKI_freebuf(transac);
+    if (btif_is_shutdown() == FALSE)
+    {
+        GKI_freebuf(transac);
+    }
+    else
+    {
+        APPL_TRACE_WARNING("GKI is already shutdown ");
+    }
 }
 
 /******************************************************************************

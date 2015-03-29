@@ -1167,7 +1167,7 @@ tBTM_STATUS btm_ble_set_encryption (BD_ADDR bd_addr, void *p_ref_data, UINT8 lin
                 }
                 else {
                     /* start link layer encryption using the security info stored */
-                    if (btm_ble_start_encrypt(bd_addr, FALSE, NULL))
+                    if (btm_ble_start_encrypt(bd_addr, FALSE, NULL) == BTM_CMD_STARTED)
                     {
                         p_rec->sec_state = BTM_SEC_STATE_ENCRYPTING;
                         cmd = BTM_CMD_STARTED;
@@ -1291,7 +1291,7 @@ tBTM_STATUS btm_ble_start_encrypt(BD_ADDR bda, BOOLEAN use_stk, BT_OCTET16 stk)
 ** Returns          void
 **
 *******************************************************************************/
-void btm_ble_link_encrypted(BD_ADDR bd_addr, UINT8 encr_enable)
+void btm_ble_link_encrypted(BD_ADDR bd_addr, UINT8 encr_enable, UINT8 status)
 {
     tBTM_SEC_DEV_REC    *p_dev_rec = btm_find_dev (bd_addr);
     BOOLEAN             enc_cback;
@@ -1302,7 +1302,7 @@ void btm_ble_link_encrypted(BD_ADDR bd_addr, UINT8 encr_enable)
         return;
     }
 
-    BTM_TRACE_DEBUG ("btm_ble_link_encrypted encr_enable=%d", encr_enable);
+    BTM_TRACE_DEBUG ("btm_ble_link_encrypted encr_enable=%d, status=%d", encr_enable, status);
 
     enc_cback = (p_dev_rec->sec_state == BTM_SEC_STATE_ENCRYPTING);
 
@@ -1319,8 +1319,24 @@ void btm_ble_link_encrypted(BD_ADDR bd_addr, UINT8 encr_enable)
         if (encr_enable)
             btm_sec_dev_rec_cback_event(p_dev_rec, BTM_SUCCESS, TRUE);
         else if (p_dev_rec->role_master)
-            btm_sec_dev_rec_cback_event(p_dev_rec, BTM_ERR_PROCESSING, TRUE);
-
+        {
+            if (status == HCI_ERR_CONN_FAILED_ESTABLISHMENT)
+                btm_sec_dev_rec_cback_event(p_dev_rec, BTM_FAILED_ESTABLISH, TRUE);
+            else if (status == BTM_DEVICE_TIMEOUT)
+                btm_sec_dev_rec_cback_event(p_dev_rec, BTM_DEVICE_TIMEOUT, TRUE);
+            else if (status == HCI_ERR_KEY_MISSING)
+                btm_sec_dev_rec_cback_event(p_dev_rec, BTM_ERR_KEY_MISSING, TRUE);
+            else if (status == HCI_ERR_CONN_CAUSE_LOCAL_HOST)
+                btm_sec_dev_rec_cback_event(p_dev_rec, BTM_HOST_DISCONN, TRUE);
+            else if (status == HCI_ERR_PEER_USER)
+                btm_sec_dev_rec_cback_event(p_dev_rec, BTM_PEER_DISCONN, TRUE);
+            else if (status == HCI_ERR_LMP_RESPONSE_TIMEOUT)
+                btm_sec_dev_rec_cback_event(p_dev_rec, BTM_LMP_TIMEOUT, TRUE);
+            else if (status == HCI_ERR_KEY_MISSING)
+                btm_sec_dev_rec_cback_event(p_dev_rec, BTM_ERR_KEY_MISSING, TRUE);
+            else
+                btm_sec_dev_rec_cback_event(p_dev_rec, BTM_ERR_PROCESSING, TRUE);
+        }
     }
     /* to notify GATT to send data if any request is pending */
     gatt_notify_enc_cmpl(p_dev_rec->bd_addr);
@@ -1375,7 +1391,7 @@ static void btm_enc_proc_slave_y(tSMP_ENC *p)
             BTM_TRACE_DEBUG ("LTK request failed - send negative reply");
             btsnd_hcic_ble_ltk_req_neg_reply(p_cb->enc_handle);
             if (p_dev_rec)
-                btm_ble_link_encrypted(p_dev_rec->bd_addr, 0);
+                btm_ble_link_encrypted(p_dev_rec->bd_addr, 0, BTM_ERR_PROCESSING);
 
         }
     }
@@ -1640,6 +1656,7 @@ void btm_ble_conn_complete(UINT8 *p, UINT16 evt_len)
     BD_ADDR     bda = {0};
     UINT16      conn_interval, conn_latency, conn_timeout;
     BOOLEAN     match = FALSE;
+    tBTM_BLE_CB *p_cb = &btm_cb.ble_ctr_cb;
     UNUSED(evt_len);
 
     STREAM_TO_UINT8   (status, p);
@@ -1653,7 +1670,7 @@ void btm_ble_conn_complete(UINT8 *p, UINT16 evt_len)
 #if (BLE_PRIVACY_SPT == TRUE )
 
         if (btm_cb.cmn_ble_vsc_cb.rpa_offloading == TRUE)
-            match = btm_public_addr_to_random_pseudo (bda, &bda_type);
+            match = btm_public_addr_to_random_pseudo (bda, &bda_type, TRUE);
 
         /* possiblly receive connection complete with resolvable random on
            slave role while the device has been paired */
@@ -1702,7 +1719,14 @@ void btm_ble_conn_complete(UINT8 *p, UINT16 evt_len)
             }
         }
     }
-    btm_ble_set_conn_st(BLE_CONN_IDLE);
+
+#if (BLE_PRIVACY_SPT == TRUE )
+    if ((btm_cb.cmn_ble_vsc_cb.rpa_offloading == TRUE) &&
+        (!BTM_BLE_IS_SCAN_ACTIVE(p_cb->scan_activity) || !btm_ble_vendor_get_irk_list_size()))
+        btm_ble_vendor_disable_irk_list();
+#endif
+    if(role != HCI_ROLE_SLAVE)
+        btm_ble_set_conn_st(BLE_CONN_IDLE);
     btm_ble_update_mode_operation(role, bda, status);
 }
 
@@ -1729,9 +1753,11 @@ void btm_ble_create_ll_conn_complete (UINT8 status)
 UINT8 btm_proc_smp_cback(tSMP_EVT event, BD_ADDR bd_addr, tSMP_EVT_DATA *p_data)
 {
     tBTM_SEC_DEV_REC    *p_dev_rec = btm_find_dev (bd_addr);
+    BOOLEAN              skip_cmpl_cback = FALSE;
     UINT8 res = 0;
 
-    BTM_TRACE_DEBUG ("btm_proc_smp_cback event = %d", event);
+    BTM_TRACE_DEBUG ("btm_proc_smp_cback event = %d, state=%d btm_cb.pairing_bda[5]=0x%0x",
+                      event, btm_cb.pairing_state, btm_cb.pairing_bda[5]);
 
     if (p_dev_rec != NULL)
     {
@@ -1747,12 +1773,38 @@ UINT8 btm_proc_smp_cback(tSMP_EVT event, BD_ADDR bd_addr, tSMP_EVT_DATA *p_data)
                 p_dev_rec->sec_flags |= BTM_SEC_LE_AUTHENTICATED;
 
             case SMP_SEC_REQUEST_EVT:
+                if(event == SMP_SEC_REQUEST_EVT)
+                {
+                    if(btm_cb.pairing_state != BTM_PAIR_STATE_IDLE && memcmp(bd_addr, btm_cb.pairing_bda, BD_ADDR_LEN) != 0)
+                    {
+                        BTM_TRACE_DEBUG ("%s: btm_cb busy with another pairing", __FUNCTION__);
+                        return 0;
+                    }
+                }
                 memcpy (btm_cb.pairing_bda, bd_addr, BD_ADDR_LEN);
                 p_dev_rec->sec_state = BTM_SEC_STATE_AUTHENTICATING;
                 btm_cb.pairing_flags |= BTM_PAIR_FLAGS_LE_ACTIVE;
                 /* fall through */
             case SMP_COMPLT_EVT:
-                if (btm_cb.api.p_le_callback)
+                if(event == SMP_COMPLT_EVT)
+                {
+                    BTM_TRACE_DEBUG("btm_proc_smp_cback: role:%d, sec_state:%d, sec_flags:0x%x, reason=%d, sec_level=0x%02x",
+                                     p_dev_rec->role_master, p_dev_rec->sec_state, p_dev_rec->sec_flags, p_data->cmplt.reason, p_data->cmplt.sec_level);
+                    if(p_dev_rec->sec_state == BTM_SEC_STATE_ENCRYPTING && p_dev_rec->role_master &&
+                       p_dev_rec->sec_flags & BTM_SEC_LE_LINK_KEY_KNOWN && p_data->cmplt.reason != SMP_SUCCESS && p_data->cmplt.reason != BTM_ERR_KEY_MISSING)
+                    {
+                        BTM_TRACE_DEBUG("btm_proc_smp_cback:skip bta_dm_ble_smp_cback() at SMP CMPL");
+                        skip_cmpl_cback = TRUE;
+                    }
+
+                    /*Avoid callback in case Slave completed encryption due to successful security request*/
+                    if(p_data->cmplt.sec_level == 0 && p_data->cmplt.reason == SMP_SUCCESS && !(p_dev_rec->role_master))
+                    {
+                        BTM_TRACE_DEBUG("btm_proc_smp_cback:bta_dm_ble_smp_cback() at SMP CMPL for slave");
+                        skip_cmpl_cback = TRUE;
+                    }
+                }
+                if (btm_cb.api.p_le_callback && !skip_cmpl_cback)
                 {
                     /* the callback function implementation may change the IO capability... */
                     BTM_TRACE_DEBUG ("btm_cb.api.p_le_callback=0x%x", btm_cb.api.p_le_callback );
@@ -1801,10 +1853,13 @@ UINT8 btm_proc_smp_cback(tSMP_EVT event, BD_ADDR bd_addr, tSMP_EVT_DATA *p_data)
                     BTM_TRACE_DEBUG ("btm_cb.pairing_bda %02x:%02x:%02x:%02x:%02x:%02x",
                                       btm_cb.pairing_bda[0], btm_cb.pairing_bda[1], btm_cb.pairing_bda[2],
                                       btm_cb.pairing_bda[3], btm_cb.pairing_bda[4], btm_cb.pairing_bda[5]);
-
-                    memset (btm_cb.pairing_bda, 0xff, BD_ADDR_LEN);
-                    btm_cb.pairing_state = BTM_PAIR_STATE_IDLE;
-                    btm_cb.pairing_flags = 0;
+                    /* Reset btm state only if the callback address matches pairing address*/
+                    if(memcmp(bd_addr, btm_cb.pairing_bda, BD_ADDR_LEN) == 0)
+                    {
+                        memset (btm_cb.pairing_bda, 0xff, BD_ADDR_LEN);
+                        btm_cb.pairing_state = BTM_PAIR_STATE_IDLE;
+                        btm_cb.pairing_flags = 0;
+                    }
                 }
                 break;
 

@@ -229,6 +229,9 @@ static bt_status_t connect( bt_bdaddr_t *bd_addr )
 {
     BTIF_TRACE_EVENT("HFP Client version is  %s", btif_hf_client_version);
     CHECK_BTHF_CLIENT_INIT();
+
+    btif_queue_remove_connect(UUID_SERVCLASS_HF_HANDSFREE, BTIF_QUEUE_CHECK_CONNECT_REQ);
+
     return btif_queue_connect(UUID_SERVCLASS_HF_HANDSFREE, bd_addr, connect_int);
 
 }
@@ -399,7 +402,7 @@ static bt_status_t dial(const char *number)
 {
     CHECK_BTHF_CLIENT_SLC_CONNECTED();
 
-    if (number)
+    if (strcmp(number,"") != 0)
     {
         BTA_HfClientSendAT(btif_hf_client_cb.handle, BTA_HF_CLIENT_AT_CMD_ATD, 0, 0, number);
     }

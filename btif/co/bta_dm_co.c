@@ -29,14 +29,20 @@
 #if (defined BLE_INCLUDED && BLE_INCLUDED == TRUE)
 #include "bte_appl.h"
 
+#if (defined BTM_NO_MITM_NO_BONDING_INCLUDED && BTM_NO_MITM_NO_BONDING_INCLUDED == TRUE)
+tBTE_APPL_CFG bte_appl_cfg = { 0x0, 0x4, 0x0, 0x0, 0x10 };
+#elif (defined BTM_NO_MITM_INCLUDED && BTM_NO_MITM_INCLUDED == TRUE)
+tBTE_APPL_CFG bte_appl_cfg = { 0x1, 0x4, 0x7, 0x7, 0x10 };
+#else
 tBTE_APPL_CFG bte_appl_cfg =
 {
     BTM_AUTH_SPGB_YES,  // Authentication requirements
-    BTM_LOCAL_IO_CAPS,  // I/O capabilities
+    BTM_IO_CAP_KBDISP,  // I/O capabilities
     7,                  // Initiaor key size
     7,                  // Responder key size
     16                  // Maximum key size
 };
+#endif
 #endif
 
 /*******************************************************************************

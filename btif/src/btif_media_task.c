@@ -2760,8 +2760,7 @@ static void btif_get_num_aa_frame(UINT8 *num_of_iterations, UINT8 *num_of_frames
         default:
             APPL_TRACE_ERROR("ERROR btif_get_num_aa_frame Unsupported transcoding format 0x%x",
                     btif_media_cb.TxTranscoding);
-            result = nof = 0;
-            noi = 0;
+            result = 0;
             break;
 
     }
@@ -2769,9 +2768,6 @@ static void btif_get_num_aa_frame(UINT8 *num_of_iterations, UINT8 *num_of_frames
 #if (defined(DEBUG_MEDIA_AV_FLOW) && (DEBUG_MEDIA_AV_FLOW == TRUE))
     APPL_TRACE_DEBUG("btif_get_num_aa_frame returns %d", result);
 #endif
-
-    *num_of_frames = nof;
-    *num_of_iterations = noi;
 }
 
 /*******************************************************************************

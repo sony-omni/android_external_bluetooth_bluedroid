@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -128,10 +128,10 @@ static int  g_server_if      = 0;
 static int  g_client_if_scan = 0;
 static int  g_server_if_scan = 0;
 
-const btgatt_test_interface_t     *sGattInterface = NULL;
+btgatt_test_interface_t     *sGattInterface = NULL;
 const  btgatt_interface_t   *sGattIfaceScan = NULL;
-const btsmp_interface_t    *sSmpIface             = NULL;
-const btgap_interface_t    *sGapInterface         = NULL;
+btsmp_interface_t    *sSmpIface             = NULL;
+btgap_interface_t    *sGapInterface         = NULL;
 const btl2cap_interface_t *sL2capInterface = NULL;
 
 
@@ -282,14 +282,6 @@ static btgatt_client_callbacks_t sGattClient_cb =
     NULL,
     NULL,
     NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
     NULL
 };
 
@@ -369,7 +361,6 @@ static tGATT_CBACK sGattCB =
     DiscoverRes_cb,
     DiscoverCmpl_cb,
     AttributeReq_cb,
-    NULL,
     NULL
 };
 
@@ -401,7 +392,6 @@ static tGATT_CBACK gap_cback =
     NULL,
     NULL,
     gap_ble_s_attr_request_cback,
-    NULL,
     NULL
 };
 
@@ -774,7 +764,7 @@ int HAL_load(void)
         }
     }
 
-    bdt_log("HAL library loaded (%s) interface pointer =%x ", strerror(err), sBtInterface);
+    bdt_log("HAL library loaded (%s)", strerror(err));
 
     return err;
 }
@@ -829,6 +819,15 @@ static void do_set_adv_params(char *p)
         return;
 //    if(FALSE == GetBdAddr(p, &bd_addr))    return;
 //    sBtInterface->le_set_adv_params(int_min, int_max, &bd_addr, addr_type);
+}
+static void do_start_advertisment(char *p)
+{
+//    int V2 = 3;
+//    V2 = get_int(&p, -1);  // arg1  Other than zero will be considered as true.
+//    bt_property_t property = {BT_PROPERTY_ADAPTER_BLE_ADV_MODE , 2, &V2};
+//    status = sBtInterface->set_adapter_property(&property);
+//      status = sGattInterface->Gatt_Listen();
+       
 }
 */
 
@@ -887,7 +886,7 @@ static void discovery_state_changed(bt_discovery_state_t state)
 }
 
 
-static void pin_request_cb(bt_bdaddr_t *remote_bd_addr, bt_bdname_t *bd_name, uint32_t cod, uint8_t secure )
+static void pin_request_cb(bt_bdaddr_t *remote_bd_addr, bt_bdname_t *bd_name, uint32_t cod/*, uint8_t secure */)
 {
     int ret = 0;
     remote_bd_address = remote_bd_addr;
@@ -934,17 +933,21 @@ static void le_test_mode(bt_status_t status, uint16_t packet_count)
 
 static bool set_wake_alarm(uint64_t delay_millis, bool should_wake, alarm_cb cb, void *data)
 {
-    return TRUE;
+   bdt_log("set_wake_alarm : NOT IMPLEMENTED");
+   return TRUE;
+    
 }
 
 static int acquire_wake_lock(const char *lock_name)
 {
-    return BT_STATUS_SUCCESS;
+  bdt_log("acquire_wake_lock : NOT IMPLEMENTED"); 
+  return 1;
 }
 
 static int release_wake_lock(const char *lock_name)
 {
-    return BT_STATUS_SUCCESS;
+ bdt_log("release_wake_lock : NOT IMPLEMENTED");
+ return 1; 
 }
 
 static bt_callbacks_t bt_callbacks = {
@@ -960,20 +963,15 @@ static bt_callbacks_t bt_callbacks = {
     acl_state_changed, /* acl_state_changed_cb */
     NULL, /* thread_evt_cb */
     dut_mode_recv, /*dut_mode_recv_cb */
-    le_test_mode, /* le_test_mode_cb */
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL
+    le_test_mode /* le_test_mode_cb */
 };
 
 static bt_os_callouts_t bt_os_callbacks = {
      sizeof(bt_os_callouts_t),
-     set_wake_alarm,
-     acquire_wake_lock,
-     release_wake_lock
-};
+	 set_wake_alarm,
+	 acquire_wake_lock,
+	 release_wake_lock
+};	
 
 static void l2test_l2c_connect_ind_cb(BD_ADDR bd_addr, UINT16 lcid, UINT16 psm, UINT8 id)
 {
@@ -1137,9 +1135,8 @@ void bdt_disable(void)
 void do_pairing(char *p)
 {
     bt_bdaddr_t bd_addr = {{0}};
-    int transport = GATT_TRANSPORT_LE;
     if(FALSE == GetBdAddr(p, &bd_addr))    return;    // arg1
-    if(BT_STATUS_SUCCESS != sBtInterface->create_bond(&bd_addr, transport))
+    if(BT_STATUS_SUCCESS != sBtInterface->create_bond(&bd_addr))
     {
         printf("Failed to Initiate Pairing \n");
         return;
@@ -1350,8 +1347,8 @@ void do_le_client_deregister(char *p)
 
 void do_le_client_connect (char *p)
 {
-    BOOLEAN        Ret = false;
-    bt_bdaddr_t bd_addr = {{0}};
+    BOOLEAN        Ret;
+    bt_bdiiaddr_t bd_addr = {{0}};
     int transport = BT_TRANSPORT_BR_EDR;
     transport = get_int(&p, -1);
     if(FALSE == GetBdAddr(p, &bd_addr))    return;
@@ -1362,8 +1359,8 @@ void do_le_client_connect (char *p)
 
         //    g_SecLevel |= BTM_SEC_OUT_AUTHENTICATE;
         //     g_SecLevel |= BTM_SEC_OUT_ENCRYPT ;
-        g_PSM= 1;
-        g_SecLevel = 0;
+        g_PSM= 1;i
+	g_SecLevel = 0;
         printf("g_SecLevel = %d \n", g_SecLevel);
         sL2capInterface->RegisterPsm(g_PSM, g_ConnType, g_SecLevel /*BTM_SEC_IN_AUTHORIZE */);
         sleep(3);
@@ -1513,7 +1510,7 @@ void do_le_client_adv_update(char *p)
     TxPower      =  get_int(&p, -1);
     timeout_s    =  get_int(&p, -1);
     //To start with we are going with hard-code values.
-    Ret = sGattIfaceScan->client->multi_adv_update(adv_if, min_interval, max_interval,adv_type,chnlMap,TxPower, timeout_s);
+    Ret = sGattIfaceScan->client->multi_adv_update(adv_if, min_interval, max_interval,adv_type,chnlMap,TxPower);
 }
 
 void do_le_client_adv_enable(char *p)
@@ -2034,7 +2031,7 @@ void do_le_gap_attr_init(char *p)
 
 void do_le_gap_set_disc(char *p)
 {
-    UINT16 Ret = 0;
+    UINT16 Ret;
     UINT16 mode;
     UINT16 duration;
     UINT16 interval;
@@ -2050,15 +2047,13 @@ void do_le_gap_set_disc(char *p)
     interval = get_int(&p, -1);
     if((12 > interval) || (interval > 1000))    interval = 0; //if 0 is passed, stack will take 800 as default
 
-
-
     sGapInterface->Gap_SetDiscoverableMode(mode, duration, interval);
     printf("%s:: Ret=%d\n", __FUNCTION__, Ret);
 }
 
 void do_le_gap_set_conn(char *p)
 {
-    UINT16 Ret=0;
+    UINT16 Ret;
     UINT16 mode;
     UINT16 duration;
     UINT16 interval;
@@ -2141,10 +2136,12 @@ const t_cmd console_cmd_list[] =
     { "c_execute_write", do_le_execute_write, "is_execute", 0 },
     { "c_scan_start", do_le_client_scan_start, "::", 0 },
     { "c_scan_stop", do_le_client_scan_stop, "::", 0 },
-    { "c_set_adv_data", do_le_client_multi_adv_set_inst_data, "::EnableScanrsp<0/1>, IncludeName<0/1> IncludeTxPower<0/1>", 0 },
-    { "start_advertising", do_le_client_adv_enable, "::int client_if,nt min_interval,int max_interval,int adv_type,int chnl_map, int tx_power timeout",0},
-    { "c_adv_update", do_le_client_adv_update, "::int min_interval,int max_interval,int adv_type,int chnl_map, int tx_power, int timeout",0},
-    { "stop_advertising", do_le_client_adv_disable, "::int adv_if",0},
+    { "c_set_adv_data", do_le_client_set_adv_data, "::EnableScan<0/1>, IncludeName<0/1> IncludeTxPower<0/1> min_iinterval max_interval", 0 },
+    { "c_listen_start", do_le_client_listen_start, "::", 0 },
+    { "c_listen_stop", do_le_client_listen_stop, "::", 0 },
+    { "start_advertising", do_le_client_adv_enable, "::int client_if,nt min_interval,int max_interval,int adv_type,int chnl_map, int tx_power timeout",0}, 
+    { "c_adv_update", do_le_client_adv_update, "::int min_interval,int max_interval,int adv_type,int chnl_map, int tx_power timeout",0}, 
+    { "stop_advertising", do_le_client_adv_disable, "::",0},  
     { "c_set_idle_timeout", do_le_set_idle_timeout, "bd_addr, time_out(int)", 0 },
     { "c_gap_attr_init", do_le_gap_attr_init, "::", 0 },
     { "c_gap_conn_param_update", do_le_gap_conn_param_update, "::", 0 },
@@ -2205,7 +2202,7 @@ static void process_cmd(char *p, unsigned char is_job)
         for(i=0; i<6; i++) {
             pincode.pin[i] = cmd[i];
         }
-        if(BT_STATUS_SUCCESS != sBtInterface->pin_reply(remote_bd_address, TRUE, strlen((const char*)pincode.pin), &pincode)) {
+        if(BT_STATUS_SUCCESS != sBtInterface->pin_reply(remote_bd_address, TRUE, strlen(&pincode), &pincode)) {
             printf("Pin Reply failed\n");
         }
         //flush the char for pinkey
@@ -2243,8 +2240,8 @@ int main (int argc, char * argv[])
     sleep(5);
     bdt_enable();
     sleep(5);
-    bdt_log("Get SMP IF BT Interface = %x \n", sBtInterface);
-    sGattInterface   = sBtInterface->get_testapp_interface(TEST_APP_GATT);
+    bdt_log("Get SMP IF");
+    sGattInterface     = sBtInterface->get_testapp_interface(TEST_APP_GATT);
     sSmpIface        = sBtInterface->get_testapp_interface(TEST_APP_SMP);
     bdt_log("Get GAP IF");
     sGapInterface    = sBtInterface->get_testapp_interface(TEST_APP_GAP);
@@ -2299,7 +2296,7 @@ int GetBdAddr(char *p, bt_bdaddr_t *pbd_addr)
     char *pszAddr = NULL;
     uint8_t k1 = 0;
     uint8_t k2 = 0;
-    uint8_t  i;
+    char i;
     char *t = NULL;
 
     skip_blanks(&p);

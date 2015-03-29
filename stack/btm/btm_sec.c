@@ -4868,8 +4868,7 @@ void btm_sec_disconnected (UINT16 handle, UINT8 reason)
             (*p_callback) (p_dev_rec->bd_addr, transport, p_dev_rec->p_ref_data, BTM_ERR_PROCESSING);
     }
 
-    BTM_TRACE_EVENT("after Update sec_flags=0x%x, p_dev_rec->security_required=0x%x", p_dev_rec->sec_flags,
-        p_dev_rec->security_required);
+    BTM_TRACE_EVENT("after Update sec_flags=0x%x", p_dev_rec->sec_flags);
 }
 
 /*******************************************************************************

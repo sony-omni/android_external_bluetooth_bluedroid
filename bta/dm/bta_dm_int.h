@@ -985,7 +985,6 @@ typedef struct
 #endif
 
     TIMER_LIST_ENT              switch_delay_timer;
-    BOOLEAN                     secure;
 
 } tBTA_DM_CB;
 

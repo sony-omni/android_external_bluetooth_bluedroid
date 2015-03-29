@@ -4868,8 +4868,7 @@ void btm_sec_disconnected (UINT16 handle, UINT8 reason)
             (*p_callback) (p_dev_rec->bd_addr, transport, p_dev_rec->p_ref_data, BTM_ERR_PROCESSING);
     }
 
-    BTM_TRACE_EVENT("after Update sec_flags=0x%x, p_dev_rec->security_required=0x%x", p_dev_rec->sec_flags,
-        p_dev_rec->security_required);
+    BTM_TRACE_EVENT("after Update sec_flags=0x%x", p_dev_rec->sec_flags);
 }
 
 /*******************************************************************************
@@ -5294,7 +5293,16 @@ void btm_sec_pin_code_request (UINT8 *p_bda)
 
             btm_cb.pairing_flags |= BTM_PAIR_FLAGS_PIN_REQD;
             if (p_cb->api.p_pin_callback)
-                (*p_cb->api.p_pin_callback) (p_bda, p_dev_rec->dev_class, p_dev_rec->sec_bd_name);
+            {
+                if(p_dev_rec->security_required & BTM_SEC_IN_AUTH_HIGH)
+                {
+                    (*p_cb->api.p_pin_callback) (p_bda, p_dev_rec->dev_class, p_dev_rec->sec_bd_name, TRUE);
+                }
+                else
+                {
+                    (*p_cb->api.p_pin_callback) (p_bda, p_dev_rec->dev_class, p_dev_rec->sec_bd_name, FALSE);
+                }
+            }
         }
         else
         {
@@ -5314,7 +5322,16 @@ void btm_sec_pin_code_request (UINT8 *p_bda)
 
                 btm_cb.pairing_flags |= BTM_PAIR_FLAGS_PIN_REQD;
                 if (p_cb->api.p_pin_callback)
-                    (*p_cb->api.p_pin_callback) (p_bda, p_dev_rec->dev_class, p_dev_rec->sec_bd_name);
+                {
+                    if(p_dev_rec->security_required & BTM_SEC_IN_AUTH_HIGH)
+                    {
+                        (*p_cb->api.p_pin_callback) (p_bda, p_dev_rec->dev_class, p_dev_rec->sec_bd_name, TRUE);
+                    }
+                    else
+                    {
+                        (*p_cb->api.p_pin_callback) (p_bda, p_dev_rec->dev_class, p_dev_rec->sec_bd_name, FALSE);
+                    }
+                }
             }
         }
     }

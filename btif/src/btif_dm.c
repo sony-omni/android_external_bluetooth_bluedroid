@@ -1059,9 +1059,8 @@ static void btif_dm_pin_req_evt(tBTA_DM_PIN_REQ *p_pin_req)
         cod = COD_UNCLASSIFIED;
     }
 
-    BTIF_TRACE_DEBUG("%s()pairing_cb.is_local_initiated = %d, secure = %d", __FUNCTION__,
-        pairing_cb.is_local_initiated, secure);
-
+    BTIF_TRACE_DEBUG("%s()pairing_cb.is_local_initiated = %d", __FUNCTION__,
+        pairing_cb.is_local_initiated);
     /* check for auto pair possiblity only if bond was initiated by local device */
     if (pairing_cb.is_local_initiated)
     {

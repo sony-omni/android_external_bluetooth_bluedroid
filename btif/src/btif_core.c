@@ -53,7 +53,6 @@
 #include "btif_profile_queue.h"
 #include "btif_config.h"
 #include "btif_sock_util.h"
-#include "btif_gatt_multi_adv_util.h"
 /************************************************************************************
 **  Constants & Macros
 ************************************************************************************/
@@ -700,11 +699,6 @@ bt_status_t btif_disable_bluetooth(void)
     status = BTA_DisableBluetooth();
 
     btif_config_flush();
-
-    /* clear the adv instances on bt turn off */
-#if (BLE_INCLUDED == TRUE)
-    btif_gatt_adv_inst_cleanup();
-#endif
 
     if (status != BTA_SUCCESS)
     {

@@ -100,10 +100,10 @@ void btif_gattc_incr_app_count(void)
 
 void btif_gattc_decr_app_count(void)
 {
-    if (multi_adv_enable_count > 0)
-        multi_adv_enable_count --;
+    if (user_app_count > 0)
+        user_app_count --;
 
-    if(multi_adv_enable_count == 0 && p_multi_adv_com_data_cb != 0)
+    if(user_app_count == 0 && p_multi_adv_com_data_cb != 0)
     {
        GKI_freebuf (p_multi_adv_com_data_cb->clntif_map);
        GKI_freebuf (p_multi_adv_com_data_cb->inst_cb);

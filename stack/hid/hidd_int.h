@@ -1,7 +1,5 @@
 /******************************************************************************
  *
- *  Copyright (c) 2013, The Linux Foundation. All rights reserved.
- *  Not a Contribution.
  *  Copyright (C) 2002-2012 Broadcom Corporation
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,14 +18,14 @@
 
 /******************************************************************************
  *
- *  This file contains HID DEVICE internal definitions
+ *  This file contains HID HOST internal definitions
  *
  ******************************************************************************/
 
-#ifndef HIDD_INT_H
-#define HIDD_INT_H
+#ifndef HIDH_INT_H
+#define HIDH_INT_H
 
-#include "hidd_api.h"
+#include "hidh_api.h"
 #include "hid_conn.h"
 #include "l2c_api.h"
 
@@ -36,45 +34,42 @@ enum {
     HID_DEV_CONNECTED
 };
 
-typedef struct device_ctb
+typedef struct per_device_ctb
 {
-    BOOLEAN    in_use;
-    BD_ADDR    addr;
+    BOOLEAN        in_use;
+    BD_ADDR        addr;  /* BD-Addr of the host device */
+    UINT16         attr_mask; /* 0x01- virtual_cable; 0x02- normally_connectable; 0x03- reconn_initiate;
+    			                 0x04- sdp_disable; */
+    UINT8          state;  /* Device state if in HOST-KNOWN mode */
+    UINT8          conn_substate;
+    UINT8          conn_tries; /* Remembers to the number of connection attempts while CONNECTING */
 
-    UINT8      state;
+    tHID_CONN      conn; /* L2CAP channel info */
+} tHID_HOST_DEV_CTB;
 
-    tHID_CONN  conn;
-
-    BOOLEAN    boot_mode;
-} tHID_DEV_DEV_CTB;
-
-typedef struct dev_ctb
+typedef struct host_ctb
 {
-    tHID_DEV_DEV_CTB        device;
-
-    tHID_DEV_HOST_CALLBACK  *callback;
+    tHID_HOST_DEV_CTB       devices[HID_HOST_MAX_DEVICES];
+    tHID_HOST_DEV_CALLBACK  *callback;             /* Application callbacks */
     tL2CAP_CFG_INFO         l2cap_cfg;
-    tL2CAP_CFG_INFO         l2cap_intr_cfg;
 
-    BOOLEAN                 use_in_qos;
-    FLOW_SPEC               in_qos;
+#define MAX_SERVICE_DB_SIZE    4000
 
+    BOOLEAN                 sdp_busy;
+    tHID_HOST_SDP_CALLBACK  *sdp_cback;
+    tSDP_DISCOVERY_DB       *p_sdp_db;
+    tHID_DEV_SDP_INFO       sdp_rec;
     BOOLEAN                 reg_flag;
     UINT8                   trace_level;
+} tHID_HOST_CTB;
 
-    BOOLEAN                 allow_incoming;
-
-    BT_HDR                  *pending_data;
-
-    BOOLEAN                 pending_vc_unplug;
-} tHID_DEV_CTB;
-
-extern tHID_STATUS hidd_conn_reg(void);
-extern void hidd_conn_dereg(void);
-extern tHID_STATUS hidd_conn_initiate(void);
-extern tHID_STATUS hidd_conn_disconnect(void);
-extern tHID_STATUS hidd_conn_send_data(UINT8 channel, UINT8 msg_type, UINT8 param,
-                                            UINT8 data, UINT16 len, UINT8 *p_data);
+extern tHID_STATUS hidh_conn_snd_data(UINT8 dhandle, UINT8 trans_type, UINT8 param, \
+                                      UINT16 data,UINT8 rpt_id, BT_HDR *buf);
+extern tHID_STATUS hidh_conn_reg (void);
+extern void hidh_conn_dereg( void );
+extern tHID_STATUS hidh_conn_disconnect (UINT8 dhandle);
+extern tHID_STATUS hidh_conn_initiate (UINT8 dhandle);
+extern void hidh_proc_repage_timeout (TIMER_LIST_ENT *p_tle);
 
 #ifdef __cplusplus
 extern "C"
@@ -85,10 +80,10 @@ extern "C"
 ** Main Control Block
 *******************************************************************************/
 #if HID_DYNAMIC_MEMORY == FALSE
-HID_API extern tHID_DEV_CTB  hd_cb;
+HID_API extern tHID_HOST_CTB  hh_cb;
 #else
-HID_API extern tHID_DEV_CTB *hidd_cb_ptr;
-#define hd_cb (*hidd_cb_ptr)
+HID_API extern tHID_HOST_CTB *hidh_cb_ptr;
+#define hh_cb (*hidh_cb_ptr)
 #endif
 
 #ifdef __cplusplus

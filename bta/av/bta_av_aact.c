@@ -1023,7 +1023,7 @@ void bta_av_do_disc_a2d (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
         p_scb->uuid_int = p_data->api_open.uuid;
         /* only one A2D find service is active at a time */
         bta_av_cb.handle = p_scb->hndl;
-        APPL_TRACE_IMP("Skip Sdp for incoming A2dp connection");
+        APPL_TRACE_DEBUG("Skip Sdp for incoming A2dp connection");
         bta_av_a2d_sdp_cback(TRUE, &a2d_ser);
     }
     else
